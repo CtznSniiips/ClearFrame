@@ -42,3 +42,8 @@ PP*.woff2
 /explorations/
 /docs/research/
 /docs/articles/
+
+# Emby plugin build output (the CI workflow publishes the DLL as an artifact)
+/emby-plugin/**/bin/
+/emby-plugin/**/obj/
+/.emby-ref/

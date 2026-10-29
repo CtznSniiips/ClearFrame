@@ -1,0 +1,81 @@
+name: Emby plugin
+
+on:
+  push:
+    paths:
+      - 'emby-plugin/**'
+      - '.github/workflows/emby-plugin.yml'
+  pull_request:
+    paths:
+      - 'emby-plugin/**'
+      - '.github/workflows/emby-plugin.yml'
+  workflow_dispatch:
+    inputs:
+      emby_version:
+        description: 'Emby Server version to compile against'
+        required: false
+        default: '4.10.2.0'
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+    name: Build (Emby ${{ matrix.emby }})
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    strategy:
+      fail-fast: false
+      matrix:
+        # First entry is the version the published artifact targets.
+        # The second keeps an eye on compatibility with the previous release line.
+        emby: ['${{ github.event.inputs.emby_version || ''4.10.2.0'' }}', '4.9.1.90']
+    env:
+      EMBY_REF_DIR: ${{ github.workspace }}/.emby-ref/${{ matrix.emby }}
+    steps:
+      - uses: actions/checkout@v7
+
+      - uses: actions/setup-dotnet@v5
+        with:
+          dotnet-version: '8.0.x'
+
+      # Compile against the exact assemblies shipped in that Emby Server release,
+      # so the plugin is checked against the server it will run on.
+      - name: Cache Emby reference assemblies
+        id: emby-cache
+        uses: actions/cache@v4
+        with:
+          path: .emby-ref/${{ matrix.emby }}
+          key: emby-ref-${{ matrix.emby }}
+
+      - name: Download Emby Server ${{ matrix.emby }} assemblies
+        if: steps.emby-cache.outputs.cache-hit != 'true'
+        run: |
+          set -euo pipefail
+          url="https://github.com/MediaBrowser/Emby.Releases/releases/download/${{ matrix.emby }}/emby-server-deb_${{ matrix.emby }}_amd64.deb"
+          curl -fsSL --retry 3 -o "$RUNNER_TEMP/emby.deb" "$url"
+          dpkg-deb -x "$RUNNER_TEMP/emby.deb" "$RUNNER_TEMP/emby"
+          mkdir -p "$EMBY_REF_DIR"
+          for dll in MediaBrowser.Common MediaBrowser.Controller MediaBrowser.Model; do
+            cp "$RUNNER_TEMP/emby/opt/emby-server/system/$dll.dll" "$EMBY_REF_DIR/"
+          done
+          ls -la "$EMBY_REF_DIR"
+
+      - name: Build
+        working-directory: emby-plugin/ClearFrame
+        run: dotnet build -c Release -p:EmbyRefDir="$EMBY_REF_DIR" -warnaserror:CS0618
+
+      - name: Check output
+        working-directory: emby-plugin/ClearFrame
+        run: |
+          set -euo pipefail
+          dll=bin/Release/netstandard2.0/ClearFrame.dll
+          test -s "$dll"
+          echo "Built $(du -h "$dll" | cut -f1) $dll against Emby ${{ matrix.emby }}"
+
+      - name: Upload plugin
+        uses: actions/upload-artifact@v5
+        with:
+          name: ClearFrame-emby-${{ matrix.emby }}
+          path: emby-plugin/ClearFrame/bin/Release/netstandard2.0/ClearFrame.dll
+          if-no-files-found: error
