@@ -28,6 +28,12 @@
     <Reference Include="MediaBrowser.Model"><HintPath>$(EmbyRefDir)/MediaBrowser.Model.dll</HintPath><Private>false</Private></Reference>
   </ItemGroup>
 
+  <!-- Emby's APIs expose ReadOnlySpan overloads; netstandard2.0 needs System.Memory to resolve them.
+       Compile-time only: the Emby server runtime already provides it. -->
+  <ItemGroup Condition="'$(TargetFramework)' == 'netstandard2.0'">
+    <PackageReference Include="System.Memory" Version="4.5.5" PrivateAssets="all" ExcludeAssets="runtime" />
+  </ItemGroup>
+
   <ItemGroup>
     <None Remove="Web\*" />
     <EmbeddedResource Include="Web\clearframe.html" />
