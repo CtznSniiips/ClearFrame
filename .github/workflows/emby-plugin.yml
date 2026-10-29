@@ -80,7 +80,7 @@ jobs:
           echo "Built $(du -h "$dll" | cut -f1) $dll against Emby ${{ matrix.emby }}"
 
       - name: Upload plugin
-        uses: actions/upload-artifact@v5
+        uses: actions/upload-artifact@v7
         with:
           name: ClearFrame-emby-${{ matrix.emby }}
           path: emby-plugin/ClearFrame/bin/Release/netstandard2.0/ClearFrame.dll
