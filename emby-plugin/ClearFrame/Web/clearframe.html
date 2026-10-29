@@ -22,6 +22,8 @@
         }
         #clearFrameConfigPage .cf-field select option, #clearFrameConfigPage .cf-inline-select option { color: #111; }
         #clearFrameConfigPage .cf-field textarea { min-height: 3.2em; resize: vertical; }
+        #clearFrameConfigPage .cf-hint { font-size: .8em; opacity: .65; margin-top: .35em; line-height: 1.4; }
+        #clearFrameConfigPage .cf-summary { font-size: .88em; opacity: .85; margin: -.2em 0 .9em; }
         #clearFrameConfigPage .cf-actions { display: flex; gap: .6em; flex-wrap: wrap; margin-top: 1em; }
         #clearFrameConfigPage .cf-btn { font: inherit; color: inherit; cursor: pointer; padding: .5em 1.1em; border-radius: 4px; border: 1px solid rgba(128,128,128,.5); background: rgba(128,128,128,.15); }
         #clearFrameConfigPage .cf-btn:hover { background: rgba(128,128,128,.28); }
@@ -99,6 +101,7 @@
                         <label><input type="checkbox" id="cfRequestsEnabled" /> Allow requests from TVs</label>
                     </div>
                     <div class="cf-actions">
+                        <button type="button" class="cf-btn cf-btn-primary" data-cf="save-settings">Save</button>
                         <button type="button" class="cf-btn" data-cf="test-seerr">Test connection</button>
                     </div>
                     <div class="cf-message" data-cf="seerr-message"></div>
@@ -128,10 +131,15 @@
                 </div>
             </div>
 
-            <!-- Home rows & playback -->
+            <!-- TV defaults -->
             <div class="cf-section">
-                <h2>Home screen &amp; playback</h2>
+                <h2>TV defaults</h2>
+                <p class="cf-help">
+                    Each TV can change these in ClearFrame's own settings on the TV. These values apply to newly paired TVs,
+                    and to any TV that hasn't changed its settings (or was reset from its card above).
+                </p>
                 <div class="cf-card">
+                    <div class="cf-field" style="margin-bottom:.4em;"><label>Home rows shown by default</label></div>
                     <div class="cf-checks">
                         <label><input type="checkbox" id="cfShowContinueWatching" /> Continue Watching</label>
                         <label><input type="checkbox" id="cfShowNextUp" /> Next Up</label>
@@ -145,22 +153,33 @@
                         <div class="cf-field">
                             <label for="cfRowLimit">Items per row</label>
                             <input id="cfRowLimit" type="number" min="1" max="100" />
+                            <div class="cf-hint">The most items any one row shows.</div>
                         </div>
                         <div class="cf-field">
                             <label for="cfSportsLookaheadHours">Sports look-ahead (hours)</label>
                             <input id="cfSportsLookaheadHours" type="number" min="1" max="168" />
+                            <div class="cf-hint">Your Teams shows games on now, plus any starting within this many hours.</div>
                         </div>
                         <div class="cf-field">
                             <label for="cfPlayDelayMs">Delay before sending play (ms)</label>
                             <input id="cfPlayDelayMs" type="number" min="0" max="15000" step="100" />
+                            <div class="cf-hint">After a freshly launched Emby app connects, wait this long before sending play so it finishes loading. Raise it if playback sometimes doesn't start. Not used when Emby is already running.</div>
                         </div>
                         <div class="cf-field">
                             <label for="cfPlayTimeoutSeconds">Wait for Emby app (seconds)</label>
                             <input id="cfPlayTimeoutSeconds" type="number" min="5" max="300" />
+                            <div class="cf-hint">How long a play request waits for the Emby app to connect before it's dropped (e.g. Emby didn't launch or is on a sign-in screen).</div>
                         </div>
+                    </div>
+                </div>
+
+                <h2 style="margin-top:1.6em;">Requests</h2>
+                <div class="cf-card">
+                    <div class="cf-grid">
                         <div class="cf-field">
                             <label for="cfRememberRequesterMinutes">Remember last requester (minutes)</label>
                             <input id="cfRememberRequesterMinutes" type="number" min="0" max="1440" />
+                            <div class="cf-hint">On a shared Emby account, whoever requested last from a TV is pre-selected in its "who's requesting" list for this long. 0 turns this off.</div>
                         </div>
                     </div>
                 </div>

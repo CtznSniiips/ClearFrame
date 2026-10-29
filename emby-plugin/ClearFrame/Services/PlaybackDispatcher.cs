@@ -31,6 +31,12 @@ namespace ClearFrame.Services
         public string ItemName { get; set; }
         public string Action { get; set; }
         public long? StartPositionTicks { get; set; }
+
+        /// <summary>Wait after the Emby app becomes controllable before sending (this TV's setting).</summary>
+        public int DelayMs { get; set; }
+
+        /// <summary>How long to keep the order queued (this TV's setting).</summary>
+        public int TimeoutSeconds { get; set; }
         public DateTime ExpiresUtc { get; set; }
         public int Attempts;
     }
@@ -79,7 +85,7 @@ namespace ClearFrame.Services
 
         public async Task<DispatchResult> Dispatch(PlaybackOrder order)
         {
-            var timeout = Math.Max(5, Plugin.Instance.Configuration.PlayTimeoutSeconds);
+            var timeout = Math.Max(5, order.TimeoutSeconds);
             order.ExpiresUtc = DateTime.UtcNow.AddSeconds(timeout);
 
             var session = FindControllableSession(order);
@@ -196,7 +202,7 @@ namespace ClearFrame.Services
                 {
                     // Give the freshly started app a moment to finish loading its home screen,
                     // otherwise it can swallow the command.
-                    var delay = Math.Max(0, Plugin.Instance.Configuration.PlayDelayMs);
+                    var delay = Math.Max(0, order.DelayMs);
                     if (delay > 0)
                     {
                         await Task.Delay(delay).ConfigureAwait(false);

@@ -30,6 +30,7 @@ Open Dashboard → Plugins → ClearFrame.
 3. **TVs:** start pairing in ClearFrame on the TV. Its four-character code appears here. Choose the Emby user the TV acts as and, if needed, the Emby app session on that TV, then press **Approve**.
    - If the Emby app reports the TV's hardware ID (DUID) as its device ID, it's matched automatically and you can leave the Emby app field on *Match automatically*.
    - Otherwise, open Emby on the TV once, press **Refresh**, and pick it from the list.
+4. **TV defaults:** choose which rows a new TV shows, items per row, the sports look-ahead and the playback timing. Each TV can then change its own rows, order, timing and teams from ClearFrame's settings on the TV. A TV's card shows whether it has done so, with **Reset TV settings to defaults** to undo it.
 
 ## TV API
 
@@ -44,6 +45,14 @@ Every TV call except pairing sends `X-ClearFrame-Token: <token>`. Responses use 
 | GET | `/emby/ClearFrame/Requesters` | | `{ RequestsEnabled, Requesters: [{ Id, Name, AvatarUrl }], LastRequesterId, UsingFallback }` |
 | POST | `/emby/ClearFrame/Request` | `{ TmdbId, MediaType: movie or tv, SeerrUserId }` | `{ Status: requested, approved or failed, Message, RequestId }` |
 | POST | `/emby/ClearFrame/Play` | `{ ItemId, Action: play, resume or details, StartPositionTicks? }` | `{ Status: sent, queued or failed, Message }` |
+| GET | `/emby/ClearFrame/Settings` | | `{ Rows: [{ Id, Title, Source, Visible, Available, Reason }], RowLimit, SportsLookaheadHours, PlayDelayMs, PlayTimeoutSeconds, SportsTeams, Customized, Ranges }` |
+| POST | `/emby/ClearFrame/Settings` | any of `{ RowOrder, HiddenRows, RowLimit, SportsLookaheadHours, PlayDelayMs, PlayTimeoutSeconds, SportsTeams }` | The updated settings. Fields you leave out stay as they are. |
+| POST | `/emby/ClearFrame/Settings/Reset` | | Settings back on the server defaults. Sports teams are kept. |
+| GET | `/emby/ClearFrame/Sports/Teams` | `?Days=7` (max 14) | `{ Days, Teams: [{ Name, League, Games, NextStartDate, Selected }], Message }`: teams found in the guide's sports listings, for picking with the remote. |
+
+**Row ids:** `continue`, `nextup`, `livenow`, `sports`, `seerr-trending`, `seerr-movies` and `seerr-tv`. `Settings.Rows` lists every row in the TV's order, so the TV can render its settings list straight from it. `Available: false` means the row can't show anything yet: Seerr isn't set up, or no teams are chosen. `Ranges` gives the min, max and server default for each number, for building sliders or steppers.
+
+**Team picker:** `/Sports/Teams` reads team names out of guide listings such as *NHL Hockey: Toronto Maple Leafs at Boston Bruins* or *Premier League: Arsenal v Chelsea*. Saved teams are listed first. To save the chosen names, send them as `SportsTeams` to `/Settings`. A team matches a programme when its name appears in the title, episode title or description.
 
 Home items carry what the TV needs to act on them:
 
@@ -53,7 +62,7 @@ Home items carry what the TV needs to act on them:
 - For Live TV: `ChannelName`, `StartDate`, `EndDate` and `IsAiring`.
 - For Seerr items: `TmdbId`, `MediaType` and `RequestStatus` (`none`, `requested`, `processing`, `partial` or `available`).
 
-**Playing from the TV:** call `/ClearFrame/Play` first, then launch the Emby app (`vYmY3ACVaa.emby`). If Emby is already running the command is sent immediately. Otherwise it's queued until the app connects, for up to *Wait for Emby app* seconds. It's sent *Delay before sending play* ms after the app connects, so the app has time to finish loading.
+**Playing from the TV:** call `/ClearFrame/Play` first, then launch the Emby app (`vYmY3ACVaa.emby`). If Emby is already running the command is sent immediately. Otherwise it's queued until the app connects, for up to the TV's `PlayTimeoutSeconds`. It's sent `PlayDelayMs` after the app connects, so the app has time to finish loading.
 
 ## Build
 
