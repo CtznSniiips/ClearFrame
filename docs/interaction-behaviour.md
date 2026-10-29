@@ -1,4 +1,4 @@
-# Interaction behaviour — 0.6.1
+# Interaction behaviour — 0.7.0
 
 ## Home
 
@@ -73,6 +73,24 @@ The gallery contains 15 bundled wallpapers. Settings → Background → Wallpape
 Settings → Background → Rotation offers Fixed, Each time Home opens, Every 5 minutes, Every 15 minutes and Every hour. Each time Home opens advances once when the launcher loads; a return to the already-running launcher does not advance it. Timed rotation counts only visible Photo Home time in either List or Dock. Panels, flat backgrounds and time spent in other apps pause the cycle. Changing the photo or rotation mode starts a new interval.
 
 Launcher wallpaper is separate from native Art Mode. Runtime photos, materials and available fonts are local assets; they do not require the Mac or a network download.
+
+## Emby and Seerr rows (ClearFrame)
+
+Nothing changes until the TV is paired with the ClearFrame Emby plugin. An unpaired Home makes no network requests and looks exactly as above.
+
+**Pairing.** Settings → Emby & Seerr → Connect opens a keypad for the server address. The arrows and OK use the on-screen keys; number keys on the remote (or a keyboard in the preview), `.` and `:` type directly, and Backspace deletes. The port defaults to 8096. Connect checks that an Emby server answers, then shows a four-character code. Approving the code on the plugin's page saves the address and the TV's token in `clearframe.server.v1`, separate from the Home preferences. Failures name the cause (unreachable, not Emby, plugin missing, rejected or expired) and offer Try again or Change address. Back on the code returns to the keypad; Back on the keypad closes Connect.
+
+**Rows on Home.** The server's rows (Continue Watching, Next Up, On Now, Your Teams, Trending, Popular Movies, Popular Shows) appear in the order and with the items each TV has chosen. Empty rows are left out.
+
+- Dock: the rows sit between the clock and the Dock. Up from the Dock enters the last row used; Up from the first row reaches the Home controls; Down from the controls enters the first row; Down from the last row returns to the Dock.
+- List: the rows form a column on the right and app names give way to it (longer names truncate, with the full name in the caption). Right from the List enters the rows; Left from a row's first card returns to the List; Down from the last row reaches the controls; Up from the first control returns to the last row.
+- Left/Right move along a row without wrapping. Each row remembers its card, and long rows scroll to keep focus in view with the next card peeking. Back returns to the apps. Focus on a card shows its title, details and the OK action above the rows.
+- OK on a library item or Live TV programme asks the server to play, resume (from the saved position) or tune that channel, then opens the Emby app. The server delivers the command when Emby connects. A server refusal or a missing Emby app shows a message, and Emby is not opened after a refusal.
+- OK on a Seerr title opens its request screen. With one linked Seerr account, a single Request button; with several, one button per person, with the last requester focused. Available, requested and processing titles only explain their status. A Seerr refusal is shown with Try again.
+
+Rows are cached so Home shows the last rows at once, then refreshed on start, when Home becomes visible again after 30 seconds away, and every five minutes while Home is visible. If the server no longer knows this TV, the rows disappear and Settings says to connect again, pre-filling the old address.
+
+**Emby & Seerr settings.** A scrolling list of this TV's own settings, stored on the Emby server: each row's Shown/Hidden, Move up and Move down; items per row; Your teams; sports look-ahead; delay before play; wait for Emby; Use defaults; and Disconnect, which asks first. Changes save as they are made. Disabled controls are skipped. Your teams lists teams found in the next week's guide, grouped by league, with Follow/Following toggles.
 
 ## Sources
 

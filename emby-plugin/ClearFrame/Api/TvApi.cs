@@ -223,6 +223,7 @@ namespace ClearFrame.Api
     public class TvApi : IService, IRequiresRequest
     {
         public const string TokenHeader = "X-ClearFrame-Token";
+        public const string AuthScheme = "ClearFrame";
 
         // TV id -> (Seerr user id, when)
         private static readonly ConcurrentDictionary<string, Tuple<int, DateTime>> LastRequester =
@@ -594,9 +595,21 @@ namespace ClearFrame.Api
             return ids;
         }
 
+        /// <summary>
+        /// The TV token comes as "Authorization: ClearFrame &lt;token&gt;" (on Emby's CORS allow list, so browser-based
+        /// clients pass the preflight) or, for older clients, as X-ClearFrame-Token.
+        /// </summary>
         private TvDevice Authenticate()
         {
-            return Runtime.Tvs.Authenticate(Request?.Headers?.Get(TokenHeader));
+            var headers = Request?.Headers;
+            var authorization = headers?.Get("Authorization");
+            string token = null;
+            if (!string.IsNullOrWhiteSpace(authorization) && authorization.TrimStart().StartsWith(AuthScheme + " ", StringComparison.OrdinalIgnoreCase))
+            {
+                token = authorization.TrimStart().Substring(AuthScheme.Length).Trim();
+            }
+
+            return Runtime.Tvs.Authenticate(string.IsNullOrWhiteSpace(token) ? headers?.Get(TokenHeader) : token);
         }
     }
 }

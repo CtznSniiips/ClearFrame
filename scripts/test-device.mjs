@@ -79,3 +79,21 @@ test('launch keeps its eight-second deadline independently of discovery', () => 
   h.launches[0].ok();
   assert.equal(results.length, 1);
 });
+
+test('Emby opens by its Samsung app ID and a missing app is explained', () => {
+  const h = harness(), results = [];
+  h.device.emby(error => results.push(error));
+  assert.equal(h.launches[0].id, 'vYmY3ACVaa.emby');
+  h.launches[0].fail({ name: 'NotFoundError', message: 'not installed' });
+  assert.match(results[0].message, /Emby isn’t installed/);
+  h.device.emby(error => results.push(error));
+  h.launches[1].ok();
+  assert.equal(results[1], null);
+});
+
+test('pairing identity falls back to a generic name off the TV', () => {
+  const h = harness();
+  let identity;
+  h.device.identity(value => { identity = value; });
+  assert.deepEqual({ ...identity }, { name: 'Samsung TV', duid: null });
+});

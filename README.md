@@ -35,6 +35,16 @@ The public preview uses the included Manrope, Geist and Newsreader fonts.
 
 The glass and blur are rendered ahead of time. The TV loads the finished images and uses transforms and opacity for focus feedback.
 
+## ClearFrame: Emby and Seerr on Home
+
+This fork adds rows from your own Emby server and Seerr to Home: Continue Watching, Next Up, On Now, games for teams you follow, and Seerr's Trending and Popular lists. OK resumes or plays in the Emby app, or requests a title in Seerr as the right person.
+
+1. Install the ClearFrame Emby plugin from [`emby-plugin/`](emby-plugin/README.md) and set up Seerr and account links on its page.
+2. On the TV: Settings → Emby & Seerr → Connect, enter the server address and approve the code on the plugin page.
+3. Choose rows, order, teams and playback timing in Settings → Emby & Seerr. Those settings belong to the TV and are kept on the server.
+
+Unpaired, the app behaves exactly as CleanFrame. See [interaction behaviour](docs/interaction-behaviour.md#emby-and-seerr-rows-clearframe).
+
 ## Use a coding agent
 
 Open this repo in a local coding agent and give it a bounded change:
@@ -74,6 +84,7 @@ npm run check
 npm run check:tools
 npx playwright install chromium
 CLEANFRAME_PUBLIC_FONTS=1 npm run check:browser
+npm run check:media
 npm run check:public
 npm run export:public
 ```

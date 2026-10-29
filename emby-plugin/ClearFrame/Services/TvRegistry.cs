@@ -159,7 +159,7 @@ namespace ClearFrame.Services
         {
             if (string.IsNullOrWhiteSpace(token))
             {
-                throw new SecurityException("Missing X-ClearFrame-Token header.", SecurityExceptionType.Unauthenticated);
+                throw new SecurityException("Missing ClearFrame token (Authorization: ClearFrame <token>).", SecurityExceptionType.Unauthenticated);
             }
 
             var hash = Hash(token.Trim());

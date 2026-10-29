@@ -34,7 +34,7 @@
     { id: '60', name: 'Every hour', min: 60 }
   ];
   var KEY = 'cleanframe.home.v1', storageOk = true, catalog = { loading: false, loaded: false, error: null, request: 0, revision: 0 };
-  var QA = window.ShoreQA = { minuteMs: window.ShoreQA && window.ShoreQA.minuteMs || 60000 };
+  var QA = window.ShoreQA = { minuteMs: window.ShoreQA && window.ShoreQA.minuteMs || 60000, pollMs: window.ShoreQA && window.ShoreQA.pollMs || 3000, staleMs: window.ShoreQA && window.ShoreQA.staleMs || 30000 };
   var FONTS = {
     manrope: { name: 'Manrope', family: 'Manrope', display: 600, ui: 500, clock: 500 },
     montreal: { name: 'Neue Montreal', family: 'Study Montreal', display: 300, ui: 400, clock: 300 },
@@ -80,6 +80,43 @@
     shown: null, pending: null, lookError: null, bundleKey: null, previewBundle: null, reflow: false, fontSwitch: false
   };
   var scroll = { first: 0, off: 0, photo: 0, photoArrange: 0 };
+
+  /* ClearFrame: Emby and Seerr rows from the paired server. Absent until the owner pairs this TV,
+     so an unpaired Home is unchanged. */
+  var Media = window.ClearFrameMedia;
+  var M = { cfg: null, data: null, rows: [], loading: false, error: null, at: 0, request: 0, unauthorized: false,
+    cols: {}, row: 0, settings: null, settingsLoading: false, settingsError: null, saving: null, note: null, timer: 0 };
+  var MEDIA_KINDS = ['movie', 'episode', 'program', 'discover'];
+  var STATUS_NAMES = { available: 'Available', partial: 'Partly available', processing: 'Processing', requested: 'Requested' };
+  var SOURCE_NAMES = { library: 'From your Emby library', livetv: 'From Emby Live TV', seerr: 'From Seerr' };
+  var REFRESH_MS = 5 * 60000;
+  function text(v, n) { return typeof v === 'string' ? v.slice(0, n || 200) : ''; }
+  function count(v) { return typeof v === 'number' && isFinite(v) ? v : null; }
+  function cleanItem(it) {
+    if (!it || typeof it !== 'object') return null;
+    return { id: text(it.Id, 80), kind: MEDIA_KINDS.indexOf(it.Kind) >= 0 ? it.Kind : 'movie', title: text(it.Title, 200), subtitle: text(it.Subtitle, 200),
+      year: count(it.Year), overview: text(it.Overview, 700), poster: text(it.PosterUrl, 800), landscape: text(it.LandscapeUrl, 800),
+      progress: count(it.ProgressPercent) === null ? null : clamp(it.ProgressPercent, 0, 100), position: count(it.PositionTicks), runtime: count(it.RuntimeTicks),
+      playId: text(it.PlayItemId, 40), action: it.DefaultAction === 'resume' ? 'resume' : it.DefaultAction === 'request' ? 'request' : 'play',
+      channel: text(it.ChannelName, 80), start: text(it.StartDate, 40), airing: it.IsAiring === true,
+      tmdb: count(it.TmdbId) || 0, mediaType: it.MediaType === 'tv' ? 'tv' : it.MediaType === 'movie' ? 'movie' : '', status: STATUS_NAMES[it.RequestStatus] ? it.RequestStatus : 'none' };
+  }
+  function cleanRows(data) {
+    return (data && Array.isArray(data.Rows) ? data.Rows : []).slice(0, 12).map(function (r) {
+      var seen = {}, items = (r && Array.isArray(r.Items) ? r.Items : []).slice(0, 100).map(cleanItem).filter(function (it) {
+        if (!it || !it.id || seen[it.id]) return false; seen[it.id] = true; return true;
+      });
+      return { id: text(r && r.Id, 40), title: text(r && r.Title, 80), layout: r && r.Layout === 'poster' ? 'poster' : 'landscape', items: items };
+    }).filter(function (r) { return r.id && r.items.length; });
+  }
+  function mediaOn() { return !!M.cfg && !M.unauthorized && M.rows.length > 0; }
+  function mediaCol(row) { return M.cols[row.id] || (M.cols[row.id] = { i: 0, first: 0 }); }
+  function mediaError(err) {
+    if (!err) return { message: 'Something went wrong.' };
+    if (err.code === 'unauthorized') return { message: 'This TV isn’t paired any more.', detail: 'Connect it again in Settings → Emby & Seerr.' };
+    if (err.code === 'network' || err.code === 'timeout') return { message: 'Couldn’t reach your Emby server.', detail: M.cfg ? Media.host(M.cfg.url) : '' };
+    return { message: err.message || 'The Emby server returned an error.', detail: '' };
+  }
   function pick(v, list, fallback) {
     v = String(v || '').toLowerCase();
     for (var i = 0; i < list.length; i++) if (list[i].toLowerCase() === v) return list[i];
@@ -271,8 +308,10 @@
   function dockLabelSize(id) { return S.c.apps === 'text' ? (textWidth(app(id).name, 40, 600, -.8, 'primary') > 264 ? 34 : 40) : textWidth(app(id).name, 36, 500, -.8, 'primary') > 280 ? 32 : 36; }
   function reducedDockLabel(id) { return S.c.apps !== 'icons' && dockLabelSize(id) === (S.c.apps === 'text' ? 34 : 32); }
   function actionWidth(text) { return clamp(Math.ceil(textWidth(text, 30, 500, -.3) + 40), 288, 400); }
+  /* With rows beside the List, app names give way to a 760px media column on the right. */
+  function listNarrow() { return S.c.layout === 'list' && mediaOn(); }
   function photoLabel(id, compact) {
-    var text = app(id).name, size = compact ? 56 : 88, limit = compact ? 640 : 992, width = textWidth(text, size, 600, -1.8, 'display');
+    var text = app(id).name, size = compact ? 56 : 88, limit = compact ? 640 : listNarrow() ? 720 : 992, width = textWidth(text, size, 600, -1.8, 'display');
     if (!compact && width > limit) { size = 76; width = textWidth(text, size, 600, -1.8, 'display'); }
     // Newsreader's ninth compact Type row otherwise enters the lower fade by .63px.
     return { size: size, top: (compact ? 10.66 : size === 76 ? 10.36 : 9.68) + fontShift('display', size) - (compact && homeFont() === 'newsreader' ? .7 : 0), width: Math.min(limit, width), ellipsis: width > limit };
@@ -280,7 +319,7 @@
   function listPlateWidth(id, compact) {
     if (S.c.apps === 'icons') return compact ? 120 : 144;
     var text = S.c.apps === 'text';
-    return clamp(Math.ceil(photoLabel(id, compact).width + (text ? 84 : compact ? 156 : 184)), text ? 280 : 360, text ? compact ? 724 : 1076 : compact ? 796 : 1176);
+    return clamp(Math.ceil(photoLabel(id, compact).width + (text ? 84 : compact ? 156 : 184)), text ? 280 : 360, text ? compact ? 724 : listNarrow() ? 804 : 1076 : compact ? 796 : listNarrow() ? 904 : 1176);
   }
 
   /* Keyed children: elements persist by key so transforms animate instead of re-creating.
@@ -532,20 +571,27 @@
 
   /* ---------- Home (browse) ---------- */
   V.home = {
+    norm: function (t) {
+      if (t.f.zone === 'media' && !mediaOn()) t.f.zone = 'apps';
+      if (mediaOn()) t.f.mr = clamp(t.f.mr || 0, 0, M.rows.length - 1);
+    },
     key: function (t, k) {
       var f = t.f, h = S.c.home, U = utils(), x = axes(), i = ensureSel();
+      if (f.zone === 'media') { mediaKey(t, k); return; }
       if (S.c.layout === 'list') { listHomeKey(t, k, i, U); return; }
       if (f.zone === 'util') {
         f.u = clamp(f.u, 0, U.length - 1);
         if (k === x.prev && f.u > 0) f.u--;
         else if (k === x.next && f.u < U.length - 1) f.u++;
+        else if (k === x.inn && mediaOn()) enterMedia(f, 0);
         else if (k === x.inn || k === 'back') f.zone = 'apps';
         else if (k === 'ok') { S.lastUtil = f.u; utilAction(U[f.u]); return; }
         S.lastUtil = f.u;
         return;
       }
       f.zone = 'apps';
-      if (k === x.out) { f.zone = 'util'; f.u = clamp(S.lastUtil, 0, U.length - 1); }
+      if (k === x.out && mediaOn()) enterMedia(f, M.row);
+      else if (k === x.out) { f.zone = 'util'; f.u = clamp(S.lastUtil, 0, U.length - 1); }
       else if (k === 'back') openMessage('leave');
       else if (!h.length) { if (k === 'ok') addAppsRoute(); }
       else if (k === x.prev && i > 0) setSel(h[i - 1]);
@@ -554,6 +600,7 @@
     },
     point: function (t, z, i) {
       if (z === 'util') { t.f.zone = 'util'; t.f.u = i; S.lastUtil = i; }
+      else if (z === 'media' && M.rows[Math.floor(i / 1000)]) { enterMedia(t.f, Math.floor(i / 1000)); mediaCol(M.rows[t.f.mr]).i = i % 1000; }
       else if (z === 'app') { t.f.zone = 'apps'; setSel(S.c.home[i]); }
       else if (z === 'empty') t.f.zone = 'apps';
       else return;
@@ -565,6 +612,7 @@
     if (f.zone === 'util') {
       f.u = clamp(f.u, 0, U.length - 1);
       if (k === 'up' && f.u > 0) f.u--;
+      else if (k === 'up' && mediaOn()) enterMedia(f, M.rows.length - 1);
       else if (k === 'down' && f.u < U.length - 1) f.u++;
       else if (k === 'left' || k === 'back') f.zone = 'apps';
       else if (k === 'ok') { S.lastUtil = f.u; utilAction(U[f.u]); return; }
@@ -573,10 +621,66 @@
     }
     f.zone = 'apps';
     if (k === 'up' && i > 0) setSel(h[i - 1]);
+    else if (k === 'right' && mediaOn()) enterMedia(f, M.row);
     else if (k === 'right') { f.zone = 'util'; f.u = clamp(S.lastUtil, 0, U.length - 1); }
     else if (k === 'down' && i < h.length - 1) setSel(h[i + 1]);
     else if (k === 'back') openMessage('leave');
     else if (k === 'ok') { if (h.length) launch(S.sel); else addAppsRoute(); }
+  }
+
+  /* ---------- Rows on Home ----------
+     Dock: controls (top) > rows > apps (bottom). List: apps (left) > rows (right column) > controls (below). */
+  function enterMedia(f, row) { f.zone = 'media'; f.mr = clamp(row || 0, 0, M.rows.length - 1); M.row = f.mr; }
+  function mediaKey(t, k) {
+    var f = t.f, list = S.c.layout === 'list', r = clamp(f.mr || 0, 0, M.rows.length - 1), row = M.rows[r], c = mediaCol(row), U = utils();
+    c.i = clamp(c.i, 0, row.items.length - 1);
+    if (k === 'left') { if (c.i > 0) c.i--; else if (list) f.zone = 'apps'; }
+    else if (k === 'right') { if (c.i < row.items.length - 1) c.i++; }
+    else if (k === 'up') { if (r > 0) f.mr = r - 1; else if (!list) { f.zone = 'util'; f.u = clamp(S.lastUtil, 0, U.length - 1); } }
+    else if (k === 'down') {
+      if (r < M.rows.length - 1) f.mr = r + 1;
+      else if (list) { f.zone = 'util'; f.u = 0; S.lastUtil = 0; }
+      else f.zone = 'apps';
+    }
+    else if (k === 'back') f.zone = 'apps';
+    else if (k === 'ok') { mediaOk(row.items[c.i]); return; }
+    if (f.zone === 'media') M.row = f.mr;
+  }
+  function mediaOk(it) {
+    if (!it) return;
+    if (it.kind === 'discover') { openRequest(it); return; }
+    if (!it.playId || busy) return;
+    S.press = null;
+    perform(it.title || 'Emby', function (done) {
+      Media.play(it.playId, it.action === 'resume' ? 'resume' : 'play', function (err, result) {
+        if (err) { if (err.code === 'unauthorized') { M.unauthorized = true; } done(mediaError(err)); return; }
+        if (result && result.Status === 'failed') { done({ message: result.Message || 'Emby couldn’t start this.', detail: '' }); return; }
+        FrameDevice.emby(done);
+      });
+    });
+  }
+  function refreshMedia(force) {
+    var request;
+    clearTimeout(M.timer); M.timer = 0;
+    M.cfg = Media.config();
+    if (!M.cfg) { M.rows = []; M.data = null; return; }
+    if (M.loading || (!force && Date.now() - M.at < QA.staleMs)) { scheduleMedia(); return; }
+    request = ++M.request; M.loading = true;
+    Media.home(function (err, data) {
+      if (request !== M.request) return;
+      M.loading = false; M.at = Date.now();
+      if (err) {
+        M.error = err;
+        if (err.code === 'unauthorized') { M.unauthorized = true; M.rows = []; }
+      } else {
+        M.error = null; M.unauthorized = false; M.data = data; M.rows = cleanRows(data);
+      }
+      scheduleMedia(); norm(); render();
+    });
+  }
+  function scheduleMedia() {
+    clearTimeout(M.timer); M.timer = 0;
+    if (M.cfg && !document.hidden) M.timer = setTimeout(function () { refreshMedia(true); }, REFRESH_MS);
   }
 
   /* ---------- Wallpaper child: focus previews, activation applies ---------- */
@@ -821,6 +925,7 @@
       { id: 'typography', label: 'Typography', value: FONTS[S.c.font].name },
       { id: 'focus', label: 'Focus', value: VALUE_NAMES[S.c.focus] + (materialApplies() ? ', ' + VALUE_NAMES[S.c.material] : '') },
       { id: 'editor', label: 'Apps on Home', value: n + (n === 1 ? ' app' : ' apps') },
+      { id: 'media', label: 'Emby & Seerr', value: !M.cfg ? 'Not connected' : M.unauthorized ? 'Not paired. Connect again' : M.cfg.tvName || Media.host(M.cfg.url) },
       { id: 'samsung', label: 'Samsung', value: 'Home and TV settings' }];
   }
   function settingsIds() { return settingsRows().map(function (r) { return r.id; }); }
@@ -839,6 +944,7 @@
   };
   function settingsOk(id) {
     if (id === 'editor') openEditor('settings');
+    else if (id === 'media') { if (!M.cfg || M.unauthorized) openConnect(); else openMediaSettings(); }
     else openAppearance(id);
   }
   var DETAIL_NAMES = { background: 'Background', layout: 'Layout', typography: 'Typography', focus: 'Focus', rotation: 'Rotation', samsung: 'Samsung' };
@@ -957,10 +1063,347 @@
       if (k === 'left') t.f.b = Math.max(0, t.f.b - 1);
       else if (k === 'right') t.f.b = Math.min(A.length - 1, t.f.b + 1);
       else if (k === 'back') pop();
-      else if (k === 'ok') { a = A[t.f.b][0]; pop(); if (a === 'samsung') perform('Samsung Home', FrameDevice.home); }
+      else if (k === 'ok') {
+        a = A[t.f.b][0]; pop();
+        if (a === 'samsung') perform('Samsung Home', FrameDevice.home);
+        else if (a === 'disconnect') disconnectMedia();
+      }
     },
     point: function (t, z, i) { if (z === 'act') { t.f.b = i; this.key(t, 'ok'); } }
   };
+
+  /* ---------- Seerr request ---------- */
+  function openRequest(it) {
+    var t = push({ id: 'request', item: it, step: 'loading', requesters: [], last: null, message: '', token: 0, f: { b: 0 } });
+    if (it.status === 'available' || it.status === 'processing' || it.status === 'requested') { requestInfo(t, it.status === 'available' ? 'This is already in your Emby library.' : it.status === 'processing' ? 'This has been requested and is on its way.' : 'This has already been requested.'); return; }
+    if (M.data && M.data.RequestsEnabled === false) { requestInfo(t, 'Requests are turned off on your Emby server.'); return; }
+    loadRequesters(t);
+  }
+  function requestInfo(t, message) { t.step = 'info'; t.message = message; t.f.b = 0; }
+  function loadRequesters(t) {
+    var token = ++t.token;
+    t.step = 'loading'; t.message = '';
+    Media.requesters(function (err, data) {
+      if (top() !== t || token !== t.token) return;
+      if (err) { t.step = 'error'; t.message = mediaError(err).message; t.f.b = 0; render(); return; }
+      t.requesters = (data && Array.isArray(data.Requesters) ? data.Requesters : []).slice(0, 6).filter(function (r) { return r && count(r.Id) > 0; })
+        .map(function (r) { return { id: r.Id, name: text(r.Name, 40) || 'Seerr user ' + r.Id }; });
+      if (!data || data.RequestsEnabled === false) requestInfo(t, 'Requests are turned off on your Emby server.');
+      else if (!t.requesters.length) requestInfo(t, 'This TV’s Emby account isn’t linked to a Seerr account yet. Link it in the ClearFrame plugin settings on your server.');
+      else {
+        t.step = 'choose';
+        t.f.b = Math.max(0, t.requesters.map(function (r) { return r.id; }).indexOf(data.LastRequesterId));
+      }
+      render();
+    });
+  }
+  function requestActions(t) {
+    if (t.step === 'choose') return t.requesters.map(function (r) { return ['as.' + r.id, t.requesters.length > 1 ? 'Request as ' + r.name : 'Request']; }).concat([['close', 'Cancel']]);
+    if (t.step === 'error') return [['retry', 'Try again'], ['close', 'Close']];
+    if (t.step === 'loading' || t.step === 'sending') return [['close', 'Cancel']];
+    return [['close', 'Done']];
+  }
+  function sendRequest(t, requester) {
+    var it = t.item, token = ++t.token;
+    t.step = 'sending'; t.f.b = 0; t.retry = requester;
+    Media.request({ TmdbId: it.tmdb, MediaType: it.mediaType, SeerrUserId: requester.id }, function (err, result) {
+      if (top() !== t || token !== t.token) return;
+      if (err || !result || result.Status === 'failed') { t.step = 'error'; t.message = err ? mediaError(err).message : result && result.Message || 'The request didn’t go through.'; t.f.b = 0; render(); return; }
+      it.status = 'requested';
+      requestInfo(t, (t.requesters.length > 1 ? 'Requested for ' + requester.name + '. ' : '') + (result.Status === 'approved' ? 'It’s approved and on its way.' : 'It’s waiting for approval.'));
+      t.step = 'done';
+      refreshMedia(true); render();
+    });
+  }
+  V.request = {
+    sheet: true,
+    norm: function (t) { t.f.b = clamp(t.f.b, 0, requestActions(t).length - 1); },
+    key: function (t, k) {
+      var A = requestActions(t), a;
+      if (k === 'left' && t.f.b > 0) t.f.b--;
+      else if (k === 'right' && t.f.b < A.length - 1) t.f.b++;
+      else if (k === 'back') { t.token++; pop(); }
+      else if (k === 'ok') {
+        a = A[t.f.b][0];
+        if (a === 'close') { t.token++; pop(); }
+        else if (a === 'retry') { if (t.retry) sendRequest(t, t.retry); else loadRequesters(t); }
+        else if (a.indexOf('as.') === 0) t.requesters.some(function (r) { if ('as.' + r.id !== a) return false; sendRequest(t, r); return true; });
+      }
+    },
+    point: function (t, z, i) { if (z === 'act') { t.f.b = i; this.key(t, 'ok'); } }
+  };
+
+  /* ---------- Connect: server address keypad and pairing code ---------- */
+  var KEYPAD = [['1', '2', '3'], ['4', '5', '6'], ['7', '8', '9'], ['.', '0', ':'], ['del', 'go']];
+  function openConnect() {
+    var c = Media.config();
+    FrameDevice.digits();
+    push({ id: 'connect', step: 'address', text: c ? Media.host(c.url) : '', error: '', url: '', token: 0, poll: 0, pairing: null, server: null, tvName: '', f: { r: 0, c: 0, b: 0 } });
+  }
+  function connectFail(t, message) { clearTimeout(t.poll); t.step = 'error'; t.error = message; t.f.b = 0; }
+  function connectStart(t) {
+    var url = Media.normalise(t.text), token;
+    if (!url) { t.error = 'Enter your Emby server’s address, like 192.168.1.10 or 192.168.1.10:8096.'; return; }
+    t.url = url; t.step = 'checking'; t.error = ''; t.f.b = 0; token = ++t.token;
+    Media.probe(url, function (err, info) {
+      if (top() !== t || token !== t.token) return;
+      if (err) { connectFail(t, err.code === 'notemby' ? err.message : 'Couldn’t reach ' + Media.host(url) + '. Check the address, and that the TV and server are on the same network.'); render(); return; }
+      t.server = info;
+      FrameDevice.identity(function (who) {
+        if (top() !== t || token !== t.token) return;
+        Media.startPairing(url, who.name, who.duid, function (err2, p) {
+          if (top() !== t || token !== t.token) return;
+          if (err2 || !p || !p.Code || !p.PairingId || !p.Secret) {
+            connectFail(t, err2 && err2.code === 'missing' ? 'Emby is running, but the ClearFrame plugin isn’t installed on it.' : mediaError(err2).message);
+            render(); return;
+          }
+          t.pairing = { id: String(p.PairingId), secret: String(p.Secret), code: text(p.Code, 12) };
+          t.step = 'code'; t.f.b = 0; pollPairing(t, token); render();
+        });
+      });
+    });
+  }
+  function pollPairing(t, token) {
+    clearTimeout(t.poll);
+    t.poll = setTimeout(function () {
+      if (top() !== t || token !== t.token || t.step !== 'code') return;
+      if (document.hidden) { pollPairing(t, token); return; }
+      Media.pairingStatus(t.url, t.pairing.id, t.pairing.secret, function (err, s) {
+        if (top() !== t || token !== t.token || t.step !== 'code') return;
+        if (err || !s) { pollPairing(t, token); return; }
+        if (s.Status === 'approved' && s.Token) {
+          if (!Media.save(t.url, String(s.Token), text(s.TvName, 80))) { connectFail(t, 'This TV couldn’t save the connection. Try again.'); render(); return; }
+          M.cfg = Media.config(); M.unauthorized = false; M.rows = []; M.data = null; M.cols = {}; M.row = 0; M.settings = null;
+          t.tvName = text(s.TvName, 80); t.step = 'done'; t.f.b = 0;
+          refreshMedia(true); render(); return;
+        }
+        if (s.Status === 'rejected') { connectFail(t, 'Pairing was turned down on the server.'); render(); return; }
+        if (s.Status === 'expired') { connectFail(t, 'That code expired. Start again for a new one.'); render(); return; }
+        pollPairing(t, token);
+      });
+    }, QA.pollMs);
+  }
+  function connectType(t, key) {
+    if (key === 'del') t.text = t.text.slice(0, -1);
+    else if (key === 'go') { connectStart(t); return; }
+    else if (t.text.length < 64) t.text += key;
+    t.error = '';
+  }
+  function connectActions(t) {
+    if (t.step === 'error') return [['retry', 'Try again'], ['edit', 'Change address']];
+    if (t.step === 'done') return [['done', 'Done']];
+    return [['cancel', 'Cancel']];
+  }
+  function closeConnect(t) { t.token++; clearTimeout(t.poll); pop(); }
+  V.connect = {
+    sheet: true,
+    norm: function (t) {
+      t.f.r = clamp(t.f.r, 0, KEYPAD.length - 1); t.f.c = clamp(t.f.c, 0, KEYPAD[t.f.r].length - 1);
+      if (t.step !== 'address') t.f.b = clamp(t.f.b, 0, connectActions(t).length - 1);
+    },
+    key: function (t, k) {
+      var f = t.f, A, a, width;
+      if (t.step === 'address') {
+        if (k.indexOf('type:') === 0) { connectType(t, k.slice(5)); return; }
+        if (k === 'back') { closeConnect(t); return; }
+        if (k === 'up' && f.r > 0) { width = KEYPAD[f.r].length; f.r--; f.c = width === 2 ? (f.c ? 2 : 0) : f.c; }
+        else if (k === 'down' && f.r < KEYPAD.length - 1) { f.r++; if (KEYPAD[f.r].length === 2) f.c = f.c === 0 ? 0 : 1; }
+        else if (k === 'left' && f.c > 0) f.c--;
+        else if (k === 'right' && f.c < KEYPAD[f.r].length - 1) f.c++;
+        else if (k === 'ok') connectType(t, KEYPAD[f.r][f.c]);
+        return;
+      }
+      A = connectActions(t);
+      if (k === 'left' && f.b > 0) f.b--;
+      else if (k === 'right' && f.b < A.length - 1) f.b++;
+      else if (k === 'back') { if (t.step === 'done') closeConnect(t); else { t.token++; clearTimeout(t.poll); t.step = 'address'; t.error = ''; } }
+      else if (k === 'ok') {
+        a = A[f.b][0];
+        if (a === 'done') { closeConnect(t); if (top().id === 'settings') openMediaSettings(); }
+        else if (a === 'retry') connectStart(t);
+        else { t.token++; clearTimeout(t.poll); t.step = 'address'; t.error = ''; }
+      }
+    },
+    point: function (t, z, i) {
+      if (z === 'key' && t.step === 'address') { t.f.r = Math.floor(i / 10); t.f.c = i % 10; this.key(t, 'ok'); }
+      else if (z === 'act' && t.step !== 'address') { t.f.b = i; this.key(t, 'ok'); }
+    }
+  };
+
+  /* ---------- Emby & Seerr settings and team picker: scrolling lists ---------- */
+  var LS_VIEW = 704, LS_LINE = 104, LS_HEAD = 64;
+  function openMediaSettings() {
+    M.note = null;
+    push({ id: 'mediaset', top: 0, f: { i: 0, p: 0 } });
+    loadMediaSettings();
+  }
+  function loadMediaSettings() {
+    M.settingsLoading = true; M.settingsError = null;
+    Media.settings(function (err, data) {
+      M.settingsLoading = false;
+      if (err) { M.settingsError = mediaError(err).message; if (err.code === 'unauthorized') M.unauthorized = true; }
+      else M.settings = data && Array.isArray(data.Rows) ? data : null;
+      norm(); render();
+    });
+  }
+  function seconds(ms) { return (ms / 1000).toFixed(ms % 1000 ? 1 : 0) + ' s'; }
+  function choiceLine(key, label, desc, field, values, format) {
+    var current = M.settings[field];
+    if (values.indexOf(current) < 0) values = values.concat([current]).sort(function (a, b) { return a - b; });
+    return { key: key, label: label, desc: desc, parts: values.map(function (v) { return { id: field + ':' + v, label: format(v), applied: v === current, value: v, field: field }; }) };
+  }
+  function mediaSettingsLines() {
+    var s = M.settings, c = M.cfg, lines = [];
+    lines.push({ key: 'conn', label: c.tvName || 'This TV', desc: 'Connected to ' + Media.host(c.url) + (M.data && M.data.UserName ? ' as ' + text(M.data.UserName, 40) : ''),
+      parts: [{ id: 'refresh', label: M.loading ? 'Refreshing…' : 'Refresh rows' }] });
+    if (!s) {
+      lines.push({ key: 'loading', label: M.settingsError ? 'Couldn’t load this TV’s settings' : 'Loading settings…', desc: M.settingsError || '', parts: M.settingsError ? [{ id: 'retry', label: 'Try again' }] : [] });
+    } else {
+      lines.push({ head: 'Home rows' });
+      s.Rows.forEach(function (r, i) {
+        lines.push({ key: 'row.' + r.Id, row: r.Id, label: text(r.Title, 60), desc: r.Available ? SOURCE_NAMES[r.Source] || '' : text(r.Reason, 120), dim: !r.Visible,
+          parts: [{ id: 'toggle', label: r.Visible ? 'Shown' : 'Hidden', applied: !!r.Visible }, { id: 'up', label: 'Move up', disabled: i === 0 }, { id: 'down', label: 'Move down', disabled: i === s.Rows.length - 1 }] });
+      });
+      lines.push({ head: 'Rows' });
+      lines.push(choiceLine('limit', 'Items per row', 'The most items a row shows.', 'RowLimit', [8, 12, 20, 30], function (v) { return String(v); }));
+      lines.push({ key: 'teams', label: 'Your teams', desc: s.SportsTeams && s.SportsTeams.length ? s.SportsTeams.slice(0, 6).join(', ') + (s.SportsTeams.length > 6 ? ' and ' + (s.SportsTeams.length - 6) + ' more' : '') : 'None chosen yet', parts: [{ id: 'teams', label: 'Choose teams' }] });
+      lines.push(choiceLine('lookahead', 'Sports look-ahead', 'Games on now, plus any starting within this time.', 'SportsLookaheadHours', [6, 12, 24, 48], function (v) { return v + ' h'; }));
+      lines.push({ head: 'Playback' });
+      lines.push(choiceLine('delay', 'Delay before play', 'Raise this if Emby opens but doesn’t start playing.', 'PlayDelayMs', [500, 1000, 1500, 2000, 3000], seconds));
+      lines.push(choiceLine('wait', 'Wait for Emby', 'How long to wait for Emby to open before giving up.', 'PlayTimeoutSeconds', [20, 45, 90], function (v) { return v + ' s'; }));
+      lines.push({ head: 'This TV' });
+      lines.push({ key: 'reset', label: 'Server defaults', desc: s.Customized ? 'This TV uses its own settings.' : 'This TV uses the server’s defaults.', parts: [{ id: 'reset', label: 'Use defaults', disabled: !s.Customized }] });
+    }
+    lines.push({ key: 'disconnect', label: 'Disconnect', desc: 'Forget the Emby server on this TV.', parts: [{ id: 'disconnect', label: 'Disconnect' }] });
+    return lines;
+  }
+  function teamLines(t) {
+    var chosen = (t.teams || []).filter(function (x) { return x.Selected; }).length, league = null;
+    var lines = [{ key: 'done', label: chosen ? 'Following ' + chosen + (chosen === 1 ? ' team' : ' teams') : 'Not following any teams yet', desc: t.loading ? 'Reading the TV guide…' : t.message || '', parts: [{ id: 'done', label: 'Done' }] }];
+    (t.teams || []).forEach(function (team) {
+      var l = team.League || 'Other';
+      if (l !== league) { league = l; lines.push({ head: l }); }
+      lines.push({ key: 'team.' + team.Name, team: team.Name, label: team.Name,
+        desc: team.Games ? team.Games + (team.Games === 1 ? ' game' : ' games') + (team.NextStartDate ? ' · next ' + timeText(team.NextStartDate) : '') : 'Not in the guide this week',
+        parts: [{ id: 'toggle', label: team.Selected ? 'Following' : 'Follow', applied: !!team.Selected }] });
+    });
+    return lines;
+  }
+  function listLines(t) { return t.id === 'teams' ? teamLines(t) : mediaSettingsLines(); }
+  function focusLines(lines) { return lines.filter(function (l) { return !l.head; }); }
+  function enabledPart(line, p, step) {
+    var i = clamp(p, 0, line.parts.length - 1);
+    while (line.parts[i] && line.parts[i].disabled) i += step || 1;
+    if (!line.parts[i]) { i = clamp(p, 0, line.parts.length - 1); while (line.parts[i] && line.parts[i].disabled) i--; }
+    return Math.max(0, i);
+  }
+  function saveTvSettings(patch, label) {
+    if (M.saving) return;
+    M.saving = label; M.note = null;
+    Media.saveSettings(patch, function (err, data) {
+      M.saving = null;
+      if (err) { M.note = 'Couldn’t save. ' + mediaError(err).message; loadMediaSettings(); }
+      else { if (data && Array.isArray(data.Rows)) M.settings = data; M.note = label + ' saved.'; refreshMedia(true); }
+      norm(); render();
+    });
+  }
+  function mediaSetOk(t, line, part) {
+    var s = M.settings, rows, i, hidden, tmp;
+    if (!part || part.disabled) return;
+    if (part.id === 'refresh') { refreshMedia(true); if (!s) loadMediaSettings(); return; }
+    if (part.id === 'retry') { loadMediaSettings(); return; }
+    if (part.id === 'disconnect') { push({ id: 'message', content: { title: 'Disconnect this TV?', line: 'ClearFrame will forget ' + Media.host(M.cfg.url) + '.', note: 'Home rows go away until you connect again. Your server keeps this TV’s pairing until you remove it there.', actions: [['cancel', 'Cancel'], ['disconnect', 'Disconnect']] }, f: { b: 0 } }); return; }
+    if (!s || M.saving) return;
+    if (part.id === 'teams') { openTeams(); return; }
+    if (part.id === 'reset') {
+      M.saving = 'Defaults'; M.note = null;
+      Media.resetSettings(function (err, data) {
+        M.saving = null;
+        if (err) M.note = 'Couldn’t reset. ' + mediaError(err).message;
+        else { if (data && Array.isArray(data.Rows)) M.settings = data; M.note = 'This TV now uses the server’s defaults.'; refreshMedia(true); }
+        render();
+      });
+      return;
+    }
+    if (line.row) {
+      rows = s.Rows; i = rows.map(function (r) { return r.Id; }).indexOf(line.row);
+      if (i < 0) return;
+      if (part.id === 'toggle') {
+        rows[i].Visible = !rows[i].Visible;
+        hidden = rows.filter(function (r) { return !r.Visible; }).map(function (r) { return r.Id; });
+        saveTvSettings({ HiddenRows: hidden }, rows[i].Title);
+      } else {
+        var to = part.id === 'up' ? i - 1 : i + 1;
+        if (to < 0 || to >= rows.length) return;
+        tmp = rows[to]; rows[to] = rows[i]; rows[i] = tmp;
+        t.f.i += to - i;
+        if (rows[to] && (to === 0 || to === rows.length - 1)) t.f.p = part.id === 'up' ? 2 : 1;
+        saveTvSettings({ RowOrder: rows.map(function (r) { return r.Id; }) }, 'Row order');
+      }
+      return;
+    }
+    if (part.field) {
+      var patch = {}; patch[part.field] = part.value; s[part.field] = part.value;
+      saveTvSettings(patch, line.label);
+    }
+  }
+  function openTeams() {
+    M.note = null;
+    var t = push({ id: 'teams', top: 0, f: { i: 0, p: 0 }, teams: [], loading: true, message: '' });
+    Media.teams(function (err, data) {
+      if (top() !== t) return;
+      t.loading = false;
+      if (err) t.message = mediaError(err).message;
+      else {
+        t.teams = (data && Array.isArray(data.Teams) ? data.Teams : []).slice(0, 400).filter(function (x) { return x && typeof x.Name === 'string' && x.Name.trim(); })
+          .map(function (x) { return { Name: text(x.Name, 60), League: text(x.League, 60) || null, Games: count(x.Games) || 0, NextStartDate: text(x.NextStartDate, 40), Selected: x.Selected === true }; });
+        t.message = text(data && data.Message, 160) || (t.teams.length ? '' : 'No teams found in the TV guide.');
+      }
+      norm(); render();
+    });
+  }
+  function teamsOk(t, line, part) {
+    if (part.id === 'done') { pop(); return; }
+    if (!line.team || M.saving) return;
+    t.teams.forEach(function (x) { if (x.Name === line.team) x.Selected = !x.Selected; });
+    var chosen = t.teams.filter(function (x) { return x.Selected; }).map(function (x) { return x.Name; });
+    if (M.settings) M.settings.SportsTeams = chosen;
+    saveTvSettings({ SportsTeams: chosen }, 'Teams');
+  }
+  function disconnectMedia() {
+    Media.forget();
+    M.cfg = null; M.rows = []; M.data = null; M.settings = null; M.cols = {}; M.row = 0; M.unauthorized = false; M.request++; M.loading = false;
+    clearTimeout(M.timer);
+    while (top().id !== 'settings' && S.stack.length > 1) pop();
+    S.stack[0].f.zone = 'apps';
+  }
+  var LIST_VIEW = {
+    sheet: true,
+    norm: function (t) {
+      var lines = focusLines(listLines(t));
+      t.f.i = clamp(t.f.i, 0, Math.max(0, lines.length - 1));
+      if (lines[t.f.i] && lines[t.f.i].parts.length) t.f.p = enabledPart(lines[t.f.i], t.f.p);
+    },
+    key: function (t, k) {
+      var lines = focusLines(listLines(t)), line = lines[t.f.i], p;
+      if (k === 'back') { pop(); return; }
+      if (!line) return;
+      if (k === 'up' && t.f.i > 0) { t.f.i--; t.f.p = enabledPart(lines[t.f.i], t.f.p); }
+      else if (k === 'down' && t.f.i < lines.length - 1) { t.f.i++; t.f.p = enabledPart(lines[t.f.i], t.f.p); }
+      else if (k === 'left' || k === 'right') {
+        p = t.f.p + (k === 'left' ? -1 : 1);
+        while (line.parts[p] && line.parts[p].disabled) p += k === 'left' ? -1 : 1;
+        if (line.parts[p]) t.f.p = p;
+      }
+      else if (k === 'ok' && line.parts[t.f.p]) { if (t.id === 'teams') teamsOk(t, line, line.parts[t.f.p]); else mediaSetOk(t, line, line.parts[t.f.p]); }
+    },
+    point: function (t, z, i) {
+      if (z !== 'part') return;
+      t.f.i = Math.floor(i / 100); t.f.p = i % 100; this.key(t, 'ok');
+    }
+  };
+  V.mediaset = LIST_VIEW;
+  V.teams = LIST_VIEW;
 
   /* ---------- Dispatch ---------- */
   function norm() { var t = top(), v = V[t.id]; if (v.norm) v.norm(t); }
@@ -986,6 +1429,7 @@
   var utPlates = [$('utLens'), $('utLensAlt')], utFields = [$('utField'), $('utFieldAlt')], utPlateIndex = 0, utPlateKey = null;
   var photoMode = null, photoTransitionToken = 0;
   var sheetEl = $('sheet'), sheetView = $('sheetView');
+  var mediaEl = $('media'), mediaInfo = $('mediaInfo'), mediaView = $('mediaView'), mediaRowsEl = $('mediaRows'), mediaScrim = $('mediaScrim');
   var IMG = { photo: $('photo'), mat: $('matImg'), bg: $('sheetBg'), field: $('phFieldImg'), fieldAlt: $('phFieldImgAlt'), utility: $('utFieldImg'), utilityAlt: $('utFieldImgAlt') };
   var sheetKey = '', slotEls = {}, dockEdgeFrame = 0, dockEdgeUntil = 0, dockAnchorCenter = 960;
   var appliedPalette = null, appliedPhoto = null, appliedFont = null, appliedFontMetrics = null;
@@ -1053,6 +1497,7 @@
     if (S.c.layout === 'list') renderList(hs);
     else { photoMode = null; renderDock(hs); }
     renderAppFocusName(hs);
+    renderMedia(t, hs);
   }
 
   function clockText() {
@@ -1150,6 +1595,113 @@
     appFocusName.className = 'app-focus-name is-on';
   }
 
+  /* ---------- Rows on Home: rendering ---------- */
+  function mediaGeom() {
+    var g;
+    if (S.c.layout === 'list') return { x: 1048, width: 760, top: 236, bottom: 748, land: { w: 232, h: 131 }, poster: { w: 104, h: 156 }, gap: 16, title: 44, after: 28 };
+    g = dockGeom(S.c.home.length || -1);
+    return { x: 112, width: 1696, top: 236, bottom: g.y - 24, land: { w: 288, h: 162 }, poster: { w: 132, h: 198 }, gap: 16, title: 44, after: 28 };
+  }
+  function cardSize(row, g) { return row.layout === 'poster' ? g.poster : g.land; }
+  /* Keep the focused card in view with the next one peeking, without wrapping. */
+  function rowWindow(row, g) {
+    var c = mediaCol(row), size = cardSize(row, g), pitch = size.w + g.gap, vis = Math.max(1, Math.floor((g.width + g.gap) / pitch)), n = row.items.length;
+    c.i = clamp(c.i, 0, n - 1);
+    if (c.i < c.first + (c.first > 0 ? 1 : 0)) c.first = Math.max(0, c.i - 1);
+    if (vis > 2 && c.i > c.first + vis - 2) c.first = c.i - vis + 2;
+    else if (vis <= 2 && c.i > c.first + vis - 1) c.first = c.i - vis + 1;
+    c.first = clamp(c.first, 0, Math.max(0, n - vis));
+    return { first: c.first, vis: vis, pitch: pitch, size: size };
+  }
+  function timeText(iso) {
+    var d = new Date(iso), h, m;
+    if (!iso || isNaN(d.getTime())) return '';
+    h = d.getHours() % 12 || 12; m = d.getMinutes();
+    return h + ':' + (m < 10 ? '0' : '') + m + (d.getHours() < 12 ? ' am' : ' pm');
+  }
+  function leftText(it) {
+    var mins;
+    if (!it.runtime || !it.position || it.position >= it.runtime) return '';
+    mins = Math.max(1, Math.round((it.runtime - it.position) / 600000000));
+    return mins >= 60 ? Math.floor(mins / 60) + ' h ' + (mins % 60 ? mins % 60 + ' min ' : '') + 'left' : mins + ' min left';
+  }
+  function mediaMeta(it) {
+    var parts = [];
+    if (it.kind === 'episode') parts.push(it.subtitle, leftText(it));
+    else if (it.kind === 'program') parts.push(it.subtitle, it.channel, it.airing ? 'On now' : 'Starts ' + timeText(it.start));
+    else if (it.kind === 'discover') parts.push(it.year ? String(it.year) : '', it.mediaType === 'tv' ? 'Series' : 'Film', STATUS_NAMES[it.status] || '');
+    else parts.push(it.year ? String(it.year) : '', leftText(it));
+    return parts.filter(function (p) { return !!p; }).join(' · ');
+  }
+  function mediaVerb(it) {
+    if (it.kind === 'discover') return it.status === 'none' || it.status === 'partial' ? 'Request' : 'Details';
+    if (it.kind === 'program') return it.airing ? 'Watch live' : 'Watch channel';
+    return it.action === 'resume' ? 'Resume' : 'Play';
+  }
+  function mediaBadge(it) {
+    if (it.kind === 'program') return '<span class="mc-badge' + (it.airing ? ' is-live' : '') + '">' + esc(it.airing ? 'Live' : timeText(it.start)) + '</span>';
+    if (it.kind === 'discover' && it.status !== 'none') return '<span class="mc-badge is-' + it.status + '">' + esc(STATUS_NAMES[it.status]) + '</span>';
+    return '';
+  }
+  function mediaCardHtml(it, row) {
+    var bar = it.progress !== null && it.progress > 0 && it.progress < 100 ? '<span class="mc-progress"><span style="width:' + it.progress.toFixed(1) + '%"></span></span>' : '';
+    return '<span class="mc-art"><img alt=""><span class="mc-fallback">' + esc(it.title) + '</span></span>' + mediaBadge(it) + bar;
+  }
+  function renderMedia(t, hs) {
+    var on = mediaOn() && hs.mode === 'browse', focus = on && hs.zone === 'media' && t.id === 'home', g, y = 0, ys = [], off, viewH, total, R, info = '', it;
+    stage.className = stage.className.replace(/\s+has-media/g, '') + (on ? ' has-media' : '');
+    mediaScrim.className = 'media-scrim' + (on ? ' is-on' : '');
+    if (!on) { mediaEl.className = 'media'; setHTML(mediaInfo, ''); return; }
+    g = mediaGeom(); viewH = Math.max(120, g.bottom - g.top);
+    R = clamp(focus ? t.f.mr : M.row, 0, M.rows.length - 1);
+    M.rows.forEach(function (row) { ys.push(y); y += g.title + cardSize(row, g).h + g.after; });
+    total = y - g.after;
+    // The focused row starts the view. Near the end, start at the first whole row that lets the rest fit.
+    off = ys[R];
+    if (total - off < viewH) ys.some(function (rowY) { if (rowY < total - viewH) return false; off = Math.min(off, rowY); return true; });
+    off = Math.max(0, off);
+    mediaEl.className = 'media is-on' + (focus ? ' is-focus' : '') + (S.c.layout === 'list' ? ' is-list' : ' is-dock');
+    mediaEl.style.left = g.x + 'px'; mediaEl.style.width = g.width + 'px';
+    mediaView.style.top = g.top + 'px'; mediaView.style.height = viewH + 'px';
+    mediaView.className = 'media-view' + (off > 0 ? ' more-before' : '') + (total - off > viewH ? ' more-after' : '');
+    mediaRowsEl.style.transform = 'translate3d(0,' + (-off) + 'px,0)';
+    keyed(mediaRowsEl, M.rows.map(function (row, r) { return { key: row.id, row: row, r: r }; }), function (el, entry) {
+      var row = entry.row, r = entry.r, win = rowWindow(row, g), size = win.size, rowVisible = ys[r] + g.title + size.h > off && ys[r] < off + viewH, track;
+      if (el._frame !== row.layout) { el.innerHTML = '<h3 class="mr-title"></h3><div class="mr-track"></div>'; el._frame = row.layout; }
+      el.className = 'mr mr-' + row.layout + (focus && r === R ? ' is-active' : '');
+      el.style.transform = 'translate3d(0,' + ys[r] + 'px,0)';
+      setHTML(el.firstChild, esc(row.title));
+      track = el.lastChild;
+      track.style.top = g.title + 'px'; track.style.height = size.h + 'px';
+      track.style.transform = 'translate3d(' + (-win.first * win.pitch) + 'px,0,0)';
+      keyed(track, row.items.map(function (item, i) { return { key: item.id, item: item, i: i }; }), function (card, ce) {
+        var item = ce.item, i = ce.i, isFocus = focus && r === R && i === mediaCol(row).i, near = rowVisible && i >= win.first - 1 && i <= win.first + win.vis + 1;
+        var src = near ? Media.image(row.layout === 'poster' ? item.poster || item.landscape : item.landscape || item.poster, row.layout === 'poster' ? size.w * 2 : size.w * 2) : '', img;
+        setContent(card, [item.id, item.status, item.progress, item.airing, item.title, row.layout].join('|'), function () { return mediaCardHtml(item, row); });
+        img = card.querySelector('img');
+        if (src && img._src !== src) {
+          img._src = src; img.className = '';
+          img.onload = function () { this.className = 'is-loaded'; };
+          img.onerror = function () { this.className = 'is-missing'; };
+          img.src = src;
+        }
+        card.className = 'mc' + (isFocus ? ' is-focus' : '') + (img.className === 'is-loaded' ? ' has-art' : '');
+        card.style.width = size.w + 'px'; card.style.height = size.h + 'px';
+        card.style.transform = 'translate3d(' + (i * win.pitch) + 'px,0,0)';
+        // Inherit when shown, so Home's hidden state under a sheet still applies.
+        card.style.visibility = i >= win.first - 1 && i <= win.first + win.vis ? '' : 'hidden';
+        card.setAttribute('role', 'button'); card.setAttribute('aria-label', item.title);
+        attrs(card, 'media', r * 1000 + i, 'media.' + row.id + '.' + item.id);
+      });
+    });
+    if (focus) {
+      it = M.rows[R].items[mediaCol(M.rows[R]).i];
+      info = '<p class="mi-title">' + esc(it.title) + '</p><p class="mi-meta"><span>' + esc(mediaMeta(it)) + '</span>'
+        + '<span class="mi-ok"><span class="remote-key">OK</span><span>' + esc(mediaVerb(it)) + '</span></span></p>';
+    }
+    setHTML(mediaInfo, info);
+  }
+
   function dockGeom(n) {
     var m = DOCK_MODES[S.c.apps], vis = Math.max(1, Math.min(5, n)), shelfW = vis * m.pitch - 8, w = shelfW + 32;
     var broad = S.geom === 'broad' && n > 5;
@@ -1205,7 +1757,7 @@
     var items = hs.items, n = items.length, empty = hs.mode !== 'arrange' && !n, g = dockGeom(empty ? -1 : n);
     var anchor = clamp(hs.i, 0, Math.max(0, n - 1)), off = empty ? 0 : dockOffset(n, anchor, g);
     var full = false, ns = n;
-    var tileFocus = hs.zone === 'apps' || hs.zone === 'tiles', tileSel = hs.zone === 'util' || hs.zone === 'act' || hs.zone === 'ctl' || hs.zone === 'preview';
+    var tileFocus = hs.zone === 'apps' || hs.zone === 'tiles', tileSel = hs.zone === 'util' || hs.zone === 'act' || hs.zone === 'ctl' || hs.zone === 'preview' || hs.zone === 'media';
     var focusItem = items[anchor], s, ax, label, width;
 
     dock.className = 'dock' + (empty ? ' is-empty' : '');
@@ -1307,7 +1859,7 @@
   function renderList(hs) {
     var items = hs.items, n = items.length, compact = hs.mode === 'arrange', pitch = compact ? PH_COMPACT_PITCH : PH_PITCH;
     var anchor = clamp(hs.i, 0, Math.max(0, n - 1)), first, off, width, slot, y, s, label, aw, plateState;
-    var rowFocus = hs.zone === 'apps' || hs.zone === 'tiles', remembered = hs.zone === 'util' || hs.zone === 'act' || hs.zone === 'ctl' || hs.zone === 'preview';
+    var rowFocus = hs.zone === 'apps' || hs.zone === 'tiles', remembered = hs.zone === 'util' || hs.zone === 'act' || hs.zone === 'ctl' || hs.zone === 'preview' || hs.zone === 'media';
     photoModeTransition(compact);
     if (compact) {
       first = clamp(scroll.photoArrange, anchor - 7, anchor - 1);
@@ -1325,7 +1877,7 @@
     phRows.style.top = (compact ? 72 : 148) + 'px';
     keyed(phRows, items, function (row, it, i) {
       var typography = photoLabel(it.id, compact), focus = rowFocus && i === anchor, lifted = hs.lifted && i === anchor, markImage, body = '';
-      setContent(row, it.id + '|' + typography.size + '|' + S.c.bg + '|' + S.c.apps + '|' + homeFont(), function () {
+      setContent(row, it.id + '|' + typography.size + '|' + S.c.bg + '|' + S.c.apps + '|' + homeFont() + '|' + listNarrow(), function () {
         if (S.c.apps !== 'text') body += appMark(app(it.id), S.c.apps === 'icons' ? compact ? 64 : 88 : compact ? 60 : 84, S.c.apps === 'icons' ? compact ? 64 : 88 : compact ? 44 : 64, S.c.apps === 'icons' ? compact ? 52 : 72 : compact ? 42 : 54);
         if (S.c.apps !== 'icons') body += '<span class="ph-name" style="font-size:' + typography.size + 'px;top:' + typography.top + 'px">' + esc(app(it.id).name) + '</span>';
         return '<span class="ph-group">' + body + '</span><span class="ph-move ph-move-up">' + icon('up') + '</span><span class="ph-move ph-move-down">' + icon('down') + '</span>';
@@ -1338,7 +1890,7 @@
       row.className = 'ph-row k-' + it.kind + (focus ? ' is-focus' : '') + (remembered && i === anchor ? ' is-sel' : '') + (lifted ? ' is-lifted' : '')
         + (lifted && i === 0 ? ' no-up' : '') + (lifted && i === n - 1 ? ' no-down' : '')
         + (it.kind === 'app' && S.press === it.id ? ' is-press' : '');
-      row.style.width = (compact ? listPlateWidth(it.id, compact) : 1200) + 'px'; row.style.height = pitch + 'px';
+      row.style.width = (compact ? listPlateWidth(it.id, compact) : listNarrow() ? 920 : 1200) + 'px'; row.style.height = pitch + 'px';
       row.style.transform = 'translate3d(0,' + (i * pitch) + 'px,0)';
       row.setAttribute('role', 'button'); row.setAttribute('aria-label', app(it.id).name);
       attrs(row, compact ? 'tile' : 'app', i, compact ? 'arrange.' + (it.kind === 'ph' ? 'placeholder.' : 'tile.') + it.id : 'home.app.' + it.id);
@@ -1516,8 +2068,58 @@
     message: function (t) {
       var m = messageContent(t);
       return '<h2 class="msg-title">' + esc(m.title) + '</h2><p class="msg-line">' + esc(m.line) + '</p><p class="msg-note">' + esc(m.note) + '</p><div class="msg-acts" data-slot="acts"></div>';
-    }
+    },
+    request: function () {
+      return '<div class="rq-art" data-slot="art"></div><div class="rq-copy"><h2 class="rq-title" data-slot="title"></h2><p class="rq-meta" data-slot="meta"></p>'
+        + '<p class="rq-overview" data-slot="overview"></p><p class="rq-status" data-slot="status" aria-live="polite"></p><div class="msg-acts rq-acts" data-slot="acts"></div></div>';
+    },
+    connect: function () {
+      return '<h2 class="s-title">Connect to Emby</h2><p class="s-sub" data-slot="sub" aria-live="polite"></p><div class="cn-body" data-slot="body"></div><div class="msg-acts cn-acts" data-slot="acts"></div>';
+    },
+    mediaset: listFrame,
+    teams: listFrame
   };
+  function listFrame() {
+    return '<h2 class="s-title" data-slot="title"></h2><p class="s-sub" data-slot="sub" aria-live="polite"></p><div class="ls-view" data-slot="view"><div class="ls-in" data-slot="list"></div></div>'
+      + '<div class="row-cue ls-before" data-slot="before" aria-hidden="true">' + icon('up') + '</div><div class="row-cue ls-after" data-slot="after" aria-hidden="true">' + icon('down') + '</div>';
+  }
+  function actButtons(actions, focus) {
+    return actions.map(function (a, i) {
+      return '<button type="button" tabindex="-1" class="btn' + (i === focus ? ' is-focus' : '') + '" data-z="act" data-i="' + i + '" data-action="act.' + esc(a[0]) + '"><span>' + esc(a[1]) + '</span></button>';
+    }).join('');
+  }
+  function fillList(t, el) {
+    var all = listLines(t), lines = focusLines(all), focus = lines[t.f.i], y = 0, fy = 0, entries = [], more = false;
+    setHTML(el.title, t.id === 'teams' ? 'Your teams' : 'Emby &amp; Seerr');
+    setHTML(el.sub, esc(M.saving ? 'Saving ' + M.saving.toLowerCase() + '…' : M.note || (t.id === 'teams' ? 'Follow teams to see their games in Your Teams on Home.' : 'These settings belong to this TV. Your Emby server keeps them.')));
+    all.forEach(function (line) {
+      entries.push({ key: line.head ? 'head.' + line.head + '.' + y : line.key, line: line, y: y });
+      if (line === focus) fy = y;
+      y += line.head ? LS_HEAD : LS_LINE;
+    });
+    if (fy < t.top) t.top = Math.max(0, fy - (all[0] && !all[0].head ? 0 : LS_HEAD));
+    if (fy + LS_LINE > t.top + LS_VIEW) t.top = fy + LS_LINE - LS_VIEW;
+    t.top = clamp(t.top, 0, Math.max(0, y - LS_VIEW));
+    keyed(el.list, entries, function (row, entry) {
+      var line = entry.line, li = lines.indexOf(line), html;
+      row.style.transform = 'translate3d(0,' + entry.y + 'px,0)';
+      row.style.visibility = entry.y + (line.head ? LS_HEAD : LS_LINE) > t.top && entry.y < t.top + LS_VIEW ? '' : 'hidden';
+      more = more || entry.y + (line.head ? LS_HEAD : LS_LINE) > t.top + LS_VIEW;
+      if (line.head) { row.className = 'ls-head'; setHTML(row, esc(line.head)); return; }
+      html = '<div class="ls-copy"><span class="ls-label">' + esc(line.label) + '</span>' + (line.desc ? '<span class="ls-desc">' + esc(line.desc) + '</span>' : '') + '</div><div class="ls-parts">'
+        + line.parts.map(function (part, p) {
+          return '<button type="button" tabindex="-1" class="ls-part' + (line === focus && p === t.f.p ? ' is-focus' : '') + (part.applied ? ' is-applied' : '') + (part.disabled ? ' is-disabled' : '') + '"'
+            + ' data-z="part" data-i="' + (li * 100 + p) + '" data-action="list.' + esc(line.key) + '.' + esc(part.id) + '" aria-label="' + esc(line.label + ': ' + part.label) + '"'
+            + (part.applied !== undefined ? ' aria-pressed="' + !!part.applied + '"' : '') + ' aria-disabled="' + !!part.disabled + '">'
+            + (part.applied ? icon('check') : '') + '<span>' + esc(part.label) + '</span></button>';
+        }).join('') + '</div>';
+      setHTML(row, html);
+      row.className = 'ls-line' + (line === focus ? ' is-active' : '') + (line.dim ? ' is-dim' : '');
+    });
+    el.list.style.transform = 'translate3d(0,' + (-t.top) + 'px,0)';
+    el.before.className = 'row-cue ls-before' + (t.top > 0 ? ' is-on' : '');
+    el.after.className = 'row-cue ls-after' + (more ? ' is-on' : '');
+  }
   function gridTileHtml(id) {
     var a = app(id), state = onHome(id) ? badge(true) + '<span>On Home</span>' : '';
     return '<span class="panel-content">' + appMark(a, 120, 72, 58) + '<span class="label">' + esc(a.name) + '</span></span><span class="state">' + state + '</span>';
@@ -1614,7 +2216,50 @@
       setHTML(el.acts, messageContent(t).actions.map(function (a, i) {
         return '<button type="button" tabindex="-1" class="btn' + (i === t.f.b ? ' is-focus' : '') + '" data-z="act" data-i="' + i + '" data-action="message.' + a[0] + '"><span>' + a[1] + '</span></button>';
       }).join(''));
-    }
+    },
+    request: function (t, el) {
+      var it = t.item, src = Media.image(it.poster || it.landscape, 640), img;
+      if (!el.art._done) {
+        el.art._done = true;
+        el.art.innerHTML = (src ? '<img alt="">' : '') + '<span class="mc-fallback">' + esc(it.title) + '</span>';
+        img = el.art.querySelector('img');
+        if (img) { img.onload = function () { this.className = 'is-loaded'; }; img.onerror = function () { this.className = 'is-missing'; }; img.src = src; }
+      }
+      setHTML(el.title, esc(it.title));
+      setHTML(el.meta, esc(mediaMeta(it)));
+      setHTML(el.overview, esc(it.overview));
+      setHTML(el.status, t.step === 'loading' ? 'Checking who can request…' : t.step === 'sending' ? 'Sending your request…' : t.step === 'choose' ? (t.requesters.length > 1 ? 'Who’s requesting?' : '') : '<span class="' + (t.step === 'error' ? 'setting-error' : '') + '">' + esc(t.message) + '</span>');
+      setHTML(el.acts, actButtons(requestActions(t), t.f.b));
+    },
+    connect: function (t, el) {
+      var html = '', sub;
+      if (t.step === 'address') {
+        sub = t.error ? '<span class="setting-error">' + esc(t.error) + '</span>' : 'Enter your Emby server’s address. The port is 8096 unless you changed it.';
+        html = '<div class="cn-field' + (t.text ? '' : ' is-empty') + '"><span>' + esc(t.text || '192.168.1.10') + '</span><span class="cn-caret"></span></div><div class="cn-pad">'
+          + KEYPAD.map(function (row, r) {
+            return '<div class="cn-row">' + row.map(function (key, c) {
+              var label = key === 'del' ? 'Delete' : key === 'go' ? 'Connect' : key;
+              return '<button type="button" tabindex="-1" class="cn-key' + (key.length > 1 ? ' is-wide' : '') + (key === 'go' ? ' is-go' : '') + (t.f.r === r && t.f.c === c ? ' is-focus' : '') + '" data-z="key" data-i="' + (r * 10 + c) + '" data-action="connect.key.' + key + '" aria-label="' + label + '">' + esc(label) + '</button>';
+            }).join('') + '</div>';
+          }).join('') + '</div><p class="cn-help">Number keys on the remote work too.</p>';
+      } else if (t.step === 'checking') {
+        sub = 'Looking for Emby at ' + esc(Media.host(t.url)) + '…';
+      } else if (t.step === 'code') {
+        sub = 'Found ' + esc(t.server ? t.server.name : 'Emby') + '. Approve this TV on your server.';
+        html = '<div class="cn-code" aria-label="Pairing code ' + esc(t.pairing.code.split('').join(' ')) + '">' + esc(t.pairing.code) + '</div>'
+          + '<p class="cn-steps">In Emby on another device, open Dashboard → Plugins → ClearFrame. Check the code matches, choose who this TV watches as, then Approve.</p><p class="cn-wait">Waiting for approval…</p>';
+      } else if (t.step === 'done') {
+        sub = 'Connected' + (t.tvName ? ' as ' + esc(t.tvName) : '') + '.';
+        html = '<p class="cn-steps">Your rows appear on Home in a moment. Change which rows show in Settings → Emby &amp; Seerr.</p>';
+      } else {
+        sub = '<span class="setting-error">' + esc(t.error) + '</span>';
+      }
+      setHTML(el.sub, sub);
+      setHTML(el.body, html);
+      setHTML(el.acts, t.step === 'address' ? '' : actButtons(connectActions(t), t.f.b));
+    },
+    mediaset: fillList,
+    teams: fillList
   };
 
   /* ---------- Atomic appearance bundles ---------- */
@@ -1833,9 +2478,20 @@
     pointAt(el);
   });
   var heldKeys = {};
+  /* Typing a server address: number keys, '.' and ':' from remotes and keyboards. */
+  function typedKey(ev) {
+    var code = ev.keyCode;
+    if (ev.key && /^[0-9.:]$/.test(ev.key)) return ev.key;
+    if (code >= 48 && code <= 57) return String(code - 48);
+    if (code >= 96 && code <= 105) return String(code - 96);
+    if (code === 190 || code === 110) return '.';
+    if (code === 8 || code === 46) return 'del';
+    return '';
+  }
   document.addEventListener('keydown', function (ev) {
-    var code = ev.keyCode, k = KEYS[code];
+    var code = ev.keyCode, k = KEYS[code], typed;
     if (code === 9) { ev.preventDefault(); return; }
+    if (top().id === 'connect' && top().step === 'address' && !ev.metaKey && !ev.ctrlKey && !ev.altKey && (typed = typedKey(ev))) { ev.preventDefault(); press('type:' + typed); return; }
     if (!k || ev.metaKey || ev.ctrlKey || ev.altKey) return;
     ev.preventDefault();
     if (k === 'ok' || k === 'back') { if (ev.repeat || heldKeys[code]) return; heldKeys[code] = true; }
@@ -1846,9 +2502,10 @@
   window.addEventListener('focus', function () { release(); focusStage(); after(); updateClock(); });
   document.addEventListener('visibilitychange', function () {
     heldKeys = {};
-    if (document.hidden) { pauseRotation(); clearTimeout(clockTimer); }
+    if (document.hidden) { pauseRotation(); clearTimeout(clockTimer); clearTimeout(M.timer); }
     else {
       release();
+      refreshMedia(false);
       if (S.c.bg === 'photo' && !S.pending && !S.previewBundle && (!committedBundle || S.bundleKey !== bundleKey(S.c))) setLook({}, { transient: true, startup: true });
       after(); updateClock(); focusStage();
     }
@@ -1871,6 +2528,8 @@
     out.wallpaperPicker = t.id === 'wallpaper' ? { candidate: WALLS[t.i].id, applied: S.c.wall, shown: S.wallShown, pending: t.previewDue || S.wallPending,
       queuedApplying: !!t.applyPending, applyPending: t.applyPending, failed: t.failedId, zone: t.f.zone, top: t.top, visible: WALL_VISIBLE, backdrop: IMG.bg.src } : null;
     out.undo = S.undo.map(function (u) { return u.label; }); out.storageOk = storageOk;
+    out.media = { paired: !!M.cfg, unauthorized: M.unauthorized, loading: M.loading, rows: M.rows.map(function (r) { return { id: r.id, items: r.items.map(function (it) { return it.id; }), focus: mediaCol(r).i }; }),
+      row: t.id === 'home' && t.f.zone === 'media' ? M.rows[t.f.mr] && M.rows[t.f.mr].id : null, settings: M.settings, saving: M.saving, note: M.note, step: t.step || null };
     return JSON.parse(JSON.stringify(out));
   };
   QA.where = function () {
@@ -1883,11 +2542,14 @@
   QA.look = function (patch) { setLook(patch, {}); return QA.state(); };
   QA.scene = function (name) { if (['home', 'apps', 'settings', 'appearance', 'editor'].indexOf(name) < 0) throw new Error('Unknown view'); goScene(name); return QA.state(); };
   QA.activate = function (action) { return activate(action) ? QA.state() : null; };
+  QA.typeAddress = function (value) { var t = top(); if (t.id !== 'connect' || t.step !== 'address') throw new Error('Connect is not open'); t.text = String(value).slice(0, 64); t.error = ''; render(); return QA.state(); };
   QA.actions = function () { var view = isSettingsDetail(top()) ? appearanceEl : sheetEl.hidden ? homeEl : sheetEl; return Array.prototype.filter.call(view.querySelectorAll('[data-action]'), renderedAction).map(function (el) { return el.getAttribute('data-action'); }); };
 
   /* ---------- Start ---------- */
   cueL.innerHTML = icon('left'); cueR.innerHTML = icon('right');
   initialise();
+  M.cfg = Media.config();
+  if (M.cfg) { M.rows = cleanRows(Media.cachedHome()); refreshMedia(true); }
   setLook({}, { transient: true, startup: true });
   norm(); render(); fit(); focusStage(); updateClock(); syncRotation();
 })();
