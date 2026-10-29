@@ -15,6 +15,14 @@ on:
         description: 'Emby Server version to compile against'
         required: false
         default: '4.10.2.0'
+  # Called by emby-plugin-release.yml so releases use exactly this build.
+  workflow_call:
+    inputs:
+      emby_version:
+        description: 'Emby Server version to compile against'
+        required: false
+        type: string
+        default: '4.10.2.0'
 
 permissions:
   contents: read
@@ -29,7 +37,8 @@ jobs:
       matrix:
         # First entry is the version the published artifact targets.
         # The second keeps an eye on compatibility with the previous release line.
-        emby: ['${{ github.event.inputs.emby_version || ''4.10.2.0'' }}', '4.9.1.90']
+        # (Collapses to one entry if the requested version is 4.9.1.90 itself.)
+        emby: ${{ fromJSON(inputs.emby_version == '4.9.1.90' && '["4.9.1.90"]' || format('["{0}","4.9.1.90"]', inputs.emby_version || '4.10.2.0')) }}
     env:
       EMBY_REF_DIR: ${{ github.workspace }}/.emby-ref/${{ matrix.emby }}
     steps:

@@ -13,7 +13,7 @@ Tested on Emby Server **4.10.2.0**. CI also builds against 4.9.1.90.
 
 ## Install
 
-1. Download `ClearFrame.dll` from the latest **Emby plugin** workflow run (Actions → Emby plugin → artifact `ClearFrame-emby-4.10.2.0`).
+1. Download `ClearFrame.dll` from the latest [release](https://github.com/CtznSniiips/ClearFrame/releases) tagged `emby-plugin-v…`. For an unreleased build, use the artifact `ClearFrame-emby-4.10.2.0` from the latest **Emby plugin** workflow run.
 2. Copy it into your Emby `plugins` folder, e.g. `/config/plugins` in the Docker container or `programdata/plugins`.
 3. Restart Emby. **ClearFrame** appears under Dashboard → Plugins.
 
@@ -70,3 +70,13 @@ dotnet build -c Release
 ```
 
 The DLL is written to `bin/Release/netstandard2.0/ClearFrame.dll`.
+
+## Release
+
+Releases are published by hand from Actions → **Emby plugin release** → Run workflow.
+
+1. Bump `<Version>` (and `AssemblyVersion`/`FileVersion`) in `ClearFrame/ClearFrame.csproj`.
+2. Add a `## <version>` section to `CHANGELOG.md`. It becomes the release notes.
+3. Merge to `main`, then run the workflow. Choose the Emby version to build against (default 4.10.2.0) and optionally mark it as a pre-release.
+
+The workflow refuses to run if the tag `emby-plugin-v<version>` already exists, or if the changelog has no section for that version. It builds through the regular **Emby plugin** workflow, so the release uses the same checks, then creates the tag and a GitHub Release with `ClearFrame.dll` attached.
