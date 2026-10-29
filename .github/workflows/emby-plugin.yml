@@ -63,7 +63,13 @@ jobs:
 
       - name: Build
         working-directory: emby-plugin/ClearFrame
-        run: dotnet build -c Release -p:EmbyRefDir="$EMBY_REF_DIR" -warnaserror:CS0618
+        run: |
+          set -o pipefail
+          if ! dotnet build -c Release -p:EmbyRefDir="$EMBY_REF_DIR" -warnaserror:CS0618 2>&1 | tee "$RUNNER_TEMP/build.log"; then
+            # Surface every error as an annotation so it shows on the run summary.
+            grep -E ': error [A-Z]+[0-9]+' "$RUNNER_TEMP/build.log" | sort -u | head -30 | sed 's/^/::error::/' || true
+            exit 1
+          fi
 
       - name: Check output
         working-directory: emby-plugin/ClearFrame
