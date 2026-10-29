@@ -88,6 +88,7 @@ The browser checks use isolated Chromium profiles and a loopback preview. They n
 | [Assets](docs/assets.md) / [third-party notices](THIRD_PARTY_NOTICES.md) | Rendering recipes, font separation and asset provenance |
 | [Asset sources](docs/asset-sources.md) | Photo credits and verification of the bundled third-party assets |
 | `.local/`, `dist/` | Ignored private setup, recovery data, generated files and packages |
+| [`emby-plugin/`](emby-plugin/README.md) | ClearFrame Emby plugin: home rows, Seerr requests and remote playback for paired TVs |
 
 ## Contribute
 

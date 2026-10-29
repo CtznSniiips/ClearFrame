@@ -1,0 +1,45 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <TargetFramework>netstandard2.0</TargetFramework>
+    <LangVersion>latest</LangVersion>
+    <RootNamespace>ClearFrame</RootNamespace>
+    <AssemblyName>ClearFrame</AssemblyName>
+    <Version>0.1.0</Version>
+    <AssemblyVersion>0.1.0.0</AssemblyVersion>
+    <FileVersion>0.1.0.0</FileVersion>
+    <Description>Server side of the ClearFrame Samsung TV home screen: home rows, Seerr requests and remote playback for paired TVs.</Description>
+    <Authors>CtznSniiips</Authors>
+    <GenerateDocumentationFile>false</GenerateDocumentationFile>
+    <Nullable>disable</Nullable>
+    <!-- Emby SDK version this plugin is built against. -->
+    <EmbySdkVersion>4.9.1.90</EmbySdkVersion>
+  </PropertyGroup>
+
+  <!-- Normal build: reference the Emby SDK from NuGet. -->
+  <ItemGroup Condition="'$(EmbyRefDir)' == ''">
+    <PackageReference Include="MediaBrowser.Server.Core" Version="$(EmbySdkVersion)" PrivateAssets="all" />
+  </ItemGroup>
+
+  <!-- Offline build: dotnet build -p:EmbyRefDir=/opt/emby-server/system -->
+  <ItemGroup Condition="'$(EmbyRefDir)' != ''">
+    <Reference Include="MediaBrowser.Common"><HintPath>$(EmbyRefDir)/MediaBrowser.Common.dll</HintPath><Private>false</Private></Reference>
+    <Reference Include="MediaBrowser.Controller"><HintPath>$(EmbyRefDir)/MediaBrowser.Controller.dll</HintPath><Private>false</Private></Reference>
+    <Reference Include="MediaBrowser.Model"><HintPath>$(EmbyRefDir)/MediaBrowser.Model.dll</HintPath><Private>false</Private></Reference>
+  </ItemGroup>
+
+  <!-- Emby's APIs expose ReadOnlySpan overloads; netstandard2.0 needs System.Memory to resolve them.
+       Compile-time only: the Emby server runtime already provides it. -->
+  <ItemGroup Condition="'$(TargetFramework)' == 'netstandard2.0'">
+    <PackageReference Include="System.Memory" Version="4.6.0" PrivateAssets="all" ExcludeAssets="runtime" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <None Remove="Web\*" />
+    <EmbeddedResource Include="Web\clearframe.html" />
+    <EmbeddedResource Include="Web\clearframe.js" />
+    <None Remove="thumb.png" />
+    <EmbeddedResource Include="thumb.png" />
+  </ItemGroup>
+
+</Project>
