@@ -35,7 +35,7 @@ namespace ClearFrame
             Seerr = new SeerrClient(json, Logger);
             Links = new LinkService(Seerr, userManager, Logger);
             Playback = new PlaybackDispatcher(sessionManager, userManager, Logger);
-            Home = new HomeBuilder(libraryManager, userManager, dtoService, tvSeriesManager, liveTvManager, Seerr, Logger);
+            Home = new HomeBuilder(libraryManager, userManager, dtoService, tvSeriesManager, liveTvManager, userDataManager, Seerr, Logger);
             Current = this;
         }
 

@@ -43,7 +43,10 @@ const ITEMS = {
   nextup: Array.from({ length: 9 }, (_, i) => ({ Id: String(200 + i), Kind: 'episode', Title: 'Show ' + (i + 1), Subtitle: 'S1:E' + (i + 2) + ' · Episode', LandscapeUrl: '/emby/Items/' + (200 + i) + '/Images/Primary?tag=x', PlayItemId: String(200 + i), DefaultAction: 'play' })),
   livenow: [{ Id: 'p1', Kind: 'program', Title: 'The News', Subtitle: 'Evening', ChannelName: 'CBC', PlayItemId: '901', DefaultAction: 'play', StartDate: began, EndDate: ends, IsAiring: true, ProgressPercent: 50, LandscapeUrl: '/emby/Items/901/Images/Primary?tag=l' }],
   sports: [{ Id: 'p2', Kind: 'program', Title: 'NHL Hockey', Subtitle: 'Maple Leafs at Bruins', ChannelName: 'Sportsnet', PlayItemId: '902', DefaultAction: 'play', StartDate: soon, EndDate: soon, IsAiring: false }],
-  'seerr-trending': Array.from({ length: 14 }, (_, i) => ({ Id: 'movie:' + (500 + i), Kind: 'discover', Title: 'Trending ' + (i + 1), Year: 2020 + (i % 5), TmdbId: 500 + i, MediaType: i % 3 ? 'movie' : 'tv', RequestStatus: i === 0 ? 'available' : i === 1 ? 'requested' : 'none', PosterUrl: 'https://image.tmdb.org/t/p/w342/p' + i + '.jpg', DefaultAction: 'request', Overview: 'A film about ' + (i + 1) + ' things.' })),
+  'seerr-trending': Array.from({ length: 14 }, (_, i) => ({ Id: 'movie:' + (500 + i), Kind: 'discover', Title: 'Trending ' + (i + 1), Year: 2020 + (i % 5), TmdbId: 500 + i, MediaType: i % 3 ? 'movie' : 'tv',
+    RequestStatus: i === 0 ? 'available' : i === 1 ? 'requested' : i === 4 ? 'partial' : 'none', PosterUrl: 'https://image.tmdb.org/t/p/w342/p' + i + '.jpg', Overview: 'A film about ' + (i + 1) + ' things.',
+    // The plugin links available and partly available titles to the library.
+    ...(i === 0 ? { PlayItemId: '701', PlayAction: 'resume', DefaultAction: 'resume' } : i === 4 ? { PlayItemId: '702', PlayAction: 'play', DefaultAction: 'request' } : { DefaultAction: 'request' }) })),
   'seerr-movies': [{ Id: 'movie:603', Kind: 'discover', Title: 'The Matrix', Year: 1999, TmdbId: 603, MediaType: 'movie', RequestStatus: 'none', PosterUrl: 'https://image.tmdb.org/t/p/w342/m.jpg', DefaultAction: 'request' }],
   'seerr-tv': []
 };
@@ -353,15 +356,39 @@ async function main() {
       await nav('ok');
       check('Done returns to Home', (await state()).view === 'home');
       await untilNode(() => api.calls.filter(c => c.path.endsWith('/Home')).length >= 2);
-      await nav('left', 'left', 'ok');
+      await nav('left', 'left');
+      check('an available title offers Resume', (await current.locator('.mi-ok').textContent()).includes('Resume'));
+      await nav('ok');
+      await until(() => window.__tv.calls.length === 1);
+      check('OK on an available title resumes it in Emby, no request screen', api.plays[0].ItemId === '701' && api.plays[0].Action === 'resume' && (await state()).view === 'home', api.plays);
+      await nav('right', 'ok');
       await until(() => ShoreQA.state().view === 'request');
-      check('available titles are not requested again', (await current.locator('.rq-status').textContent()).includes('already in your Emby library') && api.calls.filter(c => c.path.endsWith('/Requesters')).length === 1);
-      await nav('back');
+      check('already requested titles only explain their status', (await current.locator('.rq-status').textContent()).includes('already been requested') && api.calls.filter(c => c.path.endsWith('/Requesters')).length === 1);
+      await nav('back', 'left');
       api.requestStatus = 0;
       await nav('right', 'right', 'right', 'ok');
       await until(() => document.querySelectorAll('.rq-acts .btn').length === 3);
       await nav('ok'); await until(() => document.querySelector('.rq-status .setting-error'));
       check('Seerr’s refusal is shown with Try again', (await current.locator('.rq-status').textContent()).includes('already exists') && (await current.evaluate(() => ShoreQA.actions())).includes('act.retry'));
+    });
+
+    await run('Partly available titles offer Play and Request', async () => {
+      api = freshApi(); await page({ paired: true });
+      await nav('up', 'down', 'down', 'down', 'down', 'right', 'right', 'right', 'right');
+      check('the info line says both', (await current.locator('.mi-ok').textContent()).includes('Play or request'));
+      await nav('ok');
+      await until(() => ShoreQA.state().view === 'request' && document.querySelectorAll('.rq-acts .btn').length === 4);
+      check('Play first and focused, then one Request per person', (await current.evaluate(() => ShoreQA.actions())).filter(a => a.startsWith('act.')).join() === 'act.play,act.as.1,act.as.2,act.close' && (await where()).focusAction === 'act.play');
+      check('explains what is available', (await current.locator('.rq-status').textContent()).includes('Some of this is in your Emby library'));
+      await shot('request-partial');
+      await nav('ok');
+      await until(() => window.__tv.calls.length === 1);
+      check('Play starts the library copy', api.plays[0].ItemId === '702' && api.plays[0].Action === 'play' && (await state()).view === 'home', api.plays);
+      await nav('ok');
+      await until(() => document.querySelectorAll('.rq-acts .btn').length === 4);
+      await nav('right', 'ok');
+      await until(() => document.querySelector('.rq-status').textContent.includes('approved'));
+      check('Request still works for the rest', api.requests[0].TmdbId === 504 && api.requests[0].SeerrUserId === 1, api.requests);
     });
 
     await run('Single requester and unlinked accounts', async () => {

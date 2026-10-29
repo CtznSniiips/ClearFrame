@@ -55,6 +55,15 @@ namespace ClearFrame.Services
 
         /// <summary>none, requested, processing, partial or available (Seerr items).</summary>
         public string RequestStatus { get; set; }
+
+        /// <summary>
+        /// For Seerr items found in the Emby library: play or resume. PlayItemId then names the movie, or the
+        /// show's next episode (or the show itself). Partly available shows keep DefaultAction "request".
+        /// </summary>
+        public string PlayAction { get; set; }
+
+        /// <summary>Identities used to show each title only once across rows. Not sent to TVs.</summary>
+        internal List<string> Keys { get; } = new List<string>();
     }
 
     public class HomeRow
@@ -92,9 +101,11 @@ namespace ClearFrame.Services
         private readonly ILiveTvManager _liveTv;
         private readonly SeerrClient _seerr;
         private readonly ILogger _logger;
+        private readonly IUserDataManager _userData;
 
-        public HomeBuilder(ILibraryManager library, IUserManager users, IDtoService dto, ITVSeriesManager tv, ILiveTvManager liveTv, SeerrClient seerr, ILogger logger)
+        public HomeBuilder(ILibraryManager library, IUserManager users, IDtoService dto, ITVSeriesManager tv, ILiveTvManager liveTv, IUserDataManager userData, SeerrClient seerr, ILogger logger)
         {
+            _userData = userData;
             _library = library;
             _users = users;
             _dto = dto;
@@ -121,6 +132,8 @@ namespace ClearFrame.Services
             var settings = TvSettings.Resolve(tv, config);
             var user = GetUser(tv);
             var limit = settings.RowLimit;
+            // Fetch extra so rows stay full after titles shown in an earlier row are removed.
+            var fetch = Math.Min(100, limit * 2);
             var response = new HomeResponse
             {
                 TvName = tv.Name,
@@ -160,7 +173,7 @@ namespace ClearFrame.Services
                         Recursive = true,
                         IncludeItemTypes = new[] { "Movie", "Episode" },
                         OrderBy = new[] { ValueTuple.Create(ItemSortBy.DatePlayed, SortOrder.Descending) },
-                        Limit = limit,
+                        Limit = fetch,
                         DtoOptions = dtoOptions,
                     });
 
@@ -178,12 +191,12 @@ namespace ClearFrame.Services
             {
                 AddRow(response, built, TvSettings.NextUp, "landscape", () =>
                 {
-                    var result = _tv.GetNextUp(new NextUpQuery { UserId = user.InternalId, Limit = limit + resumeIds.Count }, user, dtoOptions);
+                    var result = _tv.GetNextUp(new NextUpQuery { UserId = user.InternalId, Limit = fetch + resumeIds.Count }, user, dtoOptions);
                     var items = result?.Items ?? new BaseItem[0];
                     return _dto.GetBaseItemDtos(items, dtoOptions, user)
                         .Select(d => MapLibraryItem(d, PlayAction.Play))
                         .Where(i => !resumeIds.Contains(i.Id))
-                        .Take(limit)
+                        .Take(fetch)
                         .ToList();
                 });
             }
@@ -195,7 +208,7 @@ namespace ClearFrame.Services
                     var result = _liveTv.GetRecommendedPrograms(new InternalItemsQuery(user)
                     {
                         IsAiring = true,
-                        Limit = limit,
+                        Limit = fetch,
                         DtoOptions = dtoOptions,
                     }, ct);
 
@@ -220,7 +233,7 @@ namespace ClearFrame.Services
                         .Select(g => g.First())
                         .OrderByDescending(p => p.IsAiring == true)
                         .ThenBy(p => p.StartDate, StringComparer.Ordinal)
-                        .Take(limit)
+                        .Take(fetch)
                         .ToList();
                 });
             }
@@ -239,22 +252,139 @@ namespace ClearFrame.Services
                 }
 
                 var row = new HomeRow { Id = t.Item1, Title = TvSettings.FindRow(t.Item1).Title, Layout = "poster" };
-                row.Items.AddRange(results.Take(limit).Select(MapSeerr));
+                row.Items.AddRange(results.Take(fetch).Select(MapSeerr));
                 if (row.Items.Count > 0)
                 {
                     built[row.Id] = row;
                 }
             }
 
+            try
+            {
+                MatchLibrary(user, built.Values.Where(r => r.Id.StartsWith("seerr-", StringComparison.Ordinal)).SelectMany(r => r.Items).ToList(), dtoOptions);
+            }
+            catch (Exception ex)
+            {
+                // Matching is a convenience; Seerr rows still work without it.
+                _logger.ErrorException("could not match Seerr titles to the Emby library", ex);
+            }
+
+            // Each title appears once, in the first row (in this TV's order) that has it.
+            var seen = new HashSet<string>(StringComparer.Ordinal);
             foreach (var id in settings.RowOrder)
             {
-                if (built.TryGetValue(id, out var row))
+                if (!built.TryGetValue(id, out var row))
+                {
+                    continue;
+                }
+
+                row.Items = row.Items.Where(item =>
+                {
+                    if (item.Keys.Any(seen.Contains))
+                    {
+                        return false;
+                    }
+
+                    foreach (var key in item.Keys)
+                    {
+                        seen.Add(key);
+                    }
+
+                    return true;
+                }).Take(limit).ToList();
+
+                if (row.Items.Count > 0)
                 {
                     response.Rows.Add(row);
                 }
             }
 
             return response;
+        }
+
+        /// <summary>
+        /// Links Seerr titles that Seerr reports as available (or partly available) to the Emby library by TMDB id,
+        /// so the TV can play them: a movie directly, a show at its next episode.
+        /// </summary>
+        private void MatchLibrary(User user, List<HomeItem> items, DtoOptions dtoOptions)
+        {
+            var candidates = items.Where(i => i.TmdbId > 0 && (i.RequestStatus == "available" || i.RequestStatus == "partial")).ToList();
+            if (candidates.Count == 0)
+            {
+                return;
+            }
+
+            var ids = candidates.Select(i => i.TmdbId.Value.ToString(CultureInfo.InvariantCulture)).Distinct().ToList();
+            var found = _library.GetItemList(new InternalItemsQuery(user)
+            {
+                Recursive = true,
+                IncludeItemTypes = new[] { "Movie", "Series" },
+                AnyProviderIdEquals = ids.Select(id => new KeyValuePair<string, string>("Tmdb", id)).ToList(),
+                // Emby only loads the fields asked for; load whole items (ids, provider ids) for the few matches.
+                DtoOptions = new DtoOptions(true),
+            });
+
+            var byKey = new Dictionary<string, BaseItem>(StringComparer.Ordinal);
+            foreach (var item in found)
+            {
+                var tmdb = TmdbId(item.ProviderIds);
+                if (tmdb == null)
+                {
+                    continue;
+                }
+
+                var key = (item.GetClientTypeName() == "Series" ? "tv:" : "movie:") + tmdb;
+                if (!byKey.ContainsKey(key))
+                {
+                    byKey[key] = item;
+                }
+            }
+
+            foreach (var c in candidates)
+            {
+                if (!byKey.TryGetValue(c.MediaType + ":" + c.TmdbId.Value.ToString(CultureInfo.InvariantCulture), out var match))
+                {
+                    continue;
+                }
+
+                BaseItem play = match;
+                if (c.MediaType == "tv")
+                {
+                    c.Keys.Add("series:" + match.InternalId.ToString(CultureInfo.InvariantCulture));
+                    var next = _tv.GetNextUp(new NextUpQuery { UserId = user.InternalId, SeriesId = match.InternalId, Limit = 1 }, user, dtoOptions);
+                    play = next?.Items?.FirstOrDefault() ?? match;
+                }
+                else
+                {
+                    c.Keys.Add("item:" + match.InternalId.ToString(CultureInfo.InvariantCulture));
+                }
+
+                var data = _userData.GetUserData(user, play);
+                c.PlayItemId = play.InternalId.ToString(CultureInfo.InvariantCulture);
+                c.PlayAction = data != null && data.PlaybackPositionTicks > 0 ? PlayAction.Resume : PlayAction.Play;
+                if (c.RequestStatus == "available")
+                {
+                    c.DefaultAction = c.PlayAction;
+                }
+            }
+        }
+
+        private static string TmdbId(IDictionary<string, string> providerIds)
+        {
+            if (providerIds == null)
+            {
+                return null;
+            }
+
+            foreach (var pair in providerIds)
+            {
+                if (string.Equals(pair.Key, "Tmdb", StringComparison.OrdinalIgnoreCase) && !string.IsNullOrWhiteSpace(pair.Value))
+                {
+                    return pair.Value.Trim();
+                }
+            }
+
+            return null;
         }
 
         /// <summary>Sports programmes in the guide between two times, soonest first.</summary>
@@ -312,6 +442,24 @@ namespace ClearFrame.Services
         }
 
         private static HomeItem MapLibraryItem(BaseItemDto d, string defaultAction)
+        {
+            var item = MapLibraryFields(d, defaultAction);
+            item.Keys.Add("item:" + d.Id);
+            if (d.Type == "Episode" && !string.IsNullOrEmpty(d.SeriesId))
+            {
+                item.Keys.Add("series:" + d.SeriesId);
+            }
+
+            var tmdb = TmdbId(d.ProviderIds);
+            if (d.Type != "Episode" && tmdb != null)
+            {
+                item.Keys.Add("tmdb:movie:" + tmdb);
+            }
+
+            return item;
+        }
+
+        private static HomeItem MapLibraryFields(BaseItemDto d, string defaultAction)
         {
             var item = new HomeItem
             {
@@ -376,6 +524,7 @@ namespace ClearFrame.Services
                 PlayItemId = p.ChannelId,
                 DefaultAction = PlayAction.Play,
             };
+            item.Keys.Add("program:" + p.Id);
 
             if (airing && p.StartDate.HasValue && p.EndDate.HasValue)
             {
@@ -403,7 +552,7 @@ namespace ClearFrame.Services
                 year = y;
             }
 
-            return new HomeItem
+            var item = new HomeItem
             {
                 Id = m.MediaType + ":" + m.Id,
                 Kind = "discover",
@@ -418,6 +567,8 @@ namespace ClearFrame.Services
                 RequestStatus = MapStatus(m.MediaInfo?.Status ?? 0),
                 DefaultAction = "request",
             };
+            item.Keys.Add("tmdb:" + m.MediaType + ":" + m.Id.ToString(CultureInfo.InvariantCulture));
+            return item;
         }
 
         /// <summary>Seerr MediaStatus: 1 unknown, 2 pending, 3 processing, 4 partially available, 5 available.</summary>
