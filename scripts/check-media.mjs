@@ -1,0 +1,457 @@
+// ClearFrame rows, pairing, requests and per-TV settings. The Emby plugin's TV API is mocked at
+// the network boundary (including CORS preflights); the public Tizen API is mocked as in
+// check-browser.mjs. No Emby server, Seerr or TV is contacted.
+import { mkdirSync, writeFileSync } from 'node:fs';
+import { openPreview, root } from './browser.mjs';
+
+const SERVER = 'http://cf.test:8096', TOKEN = 'tok_0123456789abcdefghijklmnop', EMBY_APP = 'vYmY3ACVaa.emby';
+const out = root + '.local/qa/media/';
+mkdirSync(out, { recursive: true });
+const report = { scope: 'Production UI in Chromium; mocked ClearFrame plugin API and Tizen API; no network.', checks: [], failures: [], pageErrors: [] };
+let preview, current, section = '', api;
+
+function check(name, pass, detail) {
+  const result = { section, name, passed: !!pass, ...(pass ? {} : { detail }) };
+  report.checks.push(result);
+  if (!pass) { report.failures.push(result); throw Error(name + (detail !== undefined ? ': ' + JSON.stringify(detail).slice(0, 600) : '')); }
+}
+async function run(name, fn) {
+  if (process.env.CHECK_SECTION && !name.toLowerCase().includes(process.env.CHECK_SECTION.toLowerCase())) return;
+  section = name;
+  try { await fn(); console.log(name + ': passed'); }
+  catch (error) { if (!report.failures.some(f => f.section === name)) report.failures.push({ section: name, error: error.stack }); console.error(name + ': ' + error.message); }
+  finally { if (current) { current.__closing = true; await current.close(); current = null; } }
+}
+
+/* ---------- Mock ClearFrame plugin ---------- */
+const ROWS = [
+  { Id: 'continue', Title: 'Continue Watching', Source: 'library' },
+  { Id: 'nextup', Title: 'Next Up', Source: 'library' },
+  { Id: 'livenow', Title: 'On Now', Source: 'livetv' },
+  { Id: 'sports', Title: 'Your Teams', Source: 'livetv' },
+  { Id: 'seerr-trending', Title: 'Trending', Source: 'seerr' },
+  { Id: 'seerr-movies', Title: 'Popular Movies', Source: 'seerr' },
+  { Id: 'seerr-tv', Title: 'Popular Shows', Source: 'seerr' }
+];
+const soon = new Date(Date.now() + 3 * 3600e3).toISOString(), began = new Date(Date.now() - 1800e3).toISOString(), ends = new Date(Date.now() + 1800e3).toISOString();
+const ITEMS = {
+  continue: [
+    { Id: '101', Kind: 'movie', Title: 'Arrival', Year: 2016, Subtitle: '2016', LandscapeUrl: '/emby/Items/101/Images/Backdrop?tag=a', PosterUrl: '/emby/Items/101/Images/Primary?tag=b', ProgressPercent: 42, PositionTicks: 300e8, RuntimeTicks: 700e8, PlayItemId: '101', DefaultAction: 'resume' },
+    { Id: '102', Kind: 'episode', Title: 'Severance', Subtitle: 'S2:E3 · Who Is Alive?', LandscapeUrl: '/emby/Items/102/Images/Primary?tag=c', ProgressPercent: 12, PositionTicks: 60e8, RuntimeTicks: 500e8, PlayItemId: '102', DefaultAction: 'resume' },
+    { Id: '103', Kind: 'movie', Title: 'Title <img src=x onerror="window.__mediaXss=1">', Year: 2001, LandscapeUrl: '', PlayItemId: '103', DefaultAction: 'resume', ProgressPercent: 80 }
+  ],
+  nextup: Array.from({ length: 9 }, (_, i) => ({ Id: String(200 + i), Kind: 'episode', Title: 'Show ' + (i + 1), Subtitle: 'S1:E' + (i + 2) + ' · Episode', LandscapeUrl: '/emby/Items/' + (200 + i) + '/Images/Primary?tag=x', PlayItemId: String(200 + i), DefaultAction: 'play' })),
+  livenow: [{ Id: 'p1', Kind: 'program', Title: 'The News', Subtitle: 'Evening', ChannelName: 'CBC', PlayItemId: '901', DefaultAction: 'play', StartDate: began, EndDate: ends, IsAiring: true, ProgressPercent: 50, LandscapeUrl: '/emby/Items/901/Images/Primary?tag=l' }],
+  sports: [{ Id: 'p2', Kind: 'program', Title: 'NHL Hockey', Subtitle: 'Maple Leafs at Bruins', ChannelName: 'Sportsnet', PlayItemId: '902', DefaultAction: 'play', StartDate: soon, EndDate: soon, IsAiring: false }],
+  'seerr-trending': Array.from({ length: 14 }, (_, i) => ({ Id: 'movie:' + (500 + i), Kind: 'discover', Title: 'Trending ' + (i + 1), Year: 2020 + (i % 5), TmdbId: 500 + i, MediaType: i % 3 ? 'movie' : 'tv', RequestStatus: i === 0 ? 'available' : i === 1 ? 'requested' : 'none', PosterUrl: 'https://image.tmdb.org/t/p/w342/p' + i + '.jpg', DefaultAction: 'request', Overview: 'A film about ' + (i + 1) + ' things.' })),
+  'seerr-movies': [{ Id: 'movie:603', Kind: 'discover', Title: 'The Matrix', Year: 1999, TmdbId: 603, MediaType: 'movie', RequestStatus: 'none', PosterUrl: 'https://image.tmdb.org/t/p/w342/m.jpg', DefaultAction: 'request' }],
+  'seerr-tv': []
+};
+function freshApi(over = {}) {
+  return {
+    order: ROWS.map(r => r.Id), hidden: [], teams: ['Toronto Maple Leafs'], limit: 20, look: 12, delay: 1500, wait: 45, customized: false,
+    approveAfter: 2, statusCalls: 0, pairs: [], plays: [], requests: [], saves: [], calls: [], unauthorized: false, unreachable: false, noPlugin: false,
+    playStatus: 'queued', requesters: [{ Id: 1, Name: 'Steve' }, { Id: 2, Name: 'Jess' }], lastRequester: 2, requestStatus: 2, requestsEnabled: true,
+    teamsList: [
+      { Name: 'Toronto Maple Leafs', League: 'NHL Hockey', Games: 2, NextStartDate: soon, Selected: true },
+      { Name: 'Boston Bruins', League: 'NHL Hockey', Games: 1, NextStartDate: soon, Selected: false },
+      { Name: 'Toronto Blue Jays', League: 'MLB Baseball', Games: 3, NextStartDate: soon, Selected: false }
+    ],
+    ...over
+  };
+}
+function settingsJson() {
+  return {
+    Rows: api.order.map(id => { const r = ROWS.find(x => x.Id === id); return { Id: id, Title: r.Title, Source: r.Source, Visible: !api.hidden.includes(id), Available: id !== 'seerr-tv', Reason: id === 'seerr-tv' ? 'Seerr isn’t set up on the server.' : null }; }),
+    RowLimit: api.limit, SportsLookaheadHours: api.look, PlayDelayMs: api.delay, PlayTimeoutSeconds: api.wait, SportsTeams: api.teams.slice(), Customized: api.customized,
+    Ranges: { RowLimit: { Min: 1, Max: 100, Default: 20 } }
+  };
+}
+function homeJson() {
+  return {
+    TvName: 'Living Room', UserName: 'steve', RequestsEnabled: api.requestsEnabled, Warnings: [],
+    Rows: api.order.filter(id => !api.hidden.includes(id) && ITEMS[id].length).map(id => ({ Id: id, Title: ROWS.find(r => r.Id === id).Title, Layout: id.startsWith('seerr') ? 'poster' : 'landscape', Items: ITEMS[id].slice(0, api.limit) }))
+  };
+}
+const CORS = { 'Access-Control-Allow-Origin': '*', 'Access-Control-Allow-Headers': 'Accept, Authorization, Content-Type', 'Access-Control-Allow-Methods': 'GET, POST, OPTIONS' };
+function art(text, w, h) {
+  return '<svg xmlns="http://www.w3.org/2000/svg" width="' + w + '" height="' + h + '"><defs><linearGradient id="g" x2="1" y2="1"><stop offset="0" stop-color="#3a5568"/><stop offset="1" stop-color="#8a6a4a"/></linearGradient></defs>'
+    + '<rect width="100%" height="100%" fill="url(#g)"/><text x="50%" y="54%" fill="#fff" font-family="sans-serif" font-size="' + Math.round(h / 8) + '" text-anchor="middle">' + text.replace(/[<&]/g, '') + '</text></svg>';
+}
+async function handle(route) {
+  const req = route.request(), url = new URL(req.url()), path = url.pathname, method = req.method();
+  const json = (status, body) => route.fulfill({ status, headers: { ...CORS, 'Content-Type': 'application/json' }, body: JSON.stringify(body) });
+  if (method === 'OPTIONS') return route.fulfill({ status: 204, headers: CORS, body: '' });
+  if (path.startsWith('/emby/Items/')) return route.fulfill({ status: 200, headers: { ...CORS, 'Content-Type': 'image/svg+xml' }, body: art(path.split('/')[3], 320, 180) });
+  if (api.unreachable) return route.abort('connectionrefused');
+  const body = req.postData() ? JSON.parse(req.postData()) : null, auth = req.headers().authorization || '';
+  api.calls.push({ method, path, body, auth, search: url.search });
+  if (path === '/emby/System/Info/Public') return json(200, { ServerName: 'Basement', Version: '4.10.2.0', Id: 'abc' });
+  if (path === '/emby/ClearFrame/Pair' && method === 'POST') {
+    if (api.noPlugin) return json(404, { message: 'not found' });
+    api.pairs.push(body); return json(200, { PairingId: 'pid1', Code: 'K7QX', Secret: 'sec1', ExpiresInSeconds: 900 });
+  }
+  if (path === '/emby/ClearFrame/Pair/Status') {
+    api.statusCalls++;
+    if (url.searchParams.get('Secret') !== 'sec1') return json(200, { Status: 'expired' });
+    return json(200, api.statusCalls >= api.approveAfter ? { Status: 'approved', Token: TOKEN, TvName: 'Living Room' } : { Status: 'pending' });
+  }
+  if (!path.startsWith('/emby/ClearFrame/')) return json(404, { message: 'nope' });
+  if (api.unauthorized || auth !== 'ClearFrame ' + TOKEN) return json(401, { Message: 'This TV is not paired with ClearFrame (or was removed). Pair it again.' });
+  const op = path.slice('/emby/ClearFrame'.length);
+  if (op === '/Home') return json(200, homeJson());
+  if (op === '/Settings' && method === 'GET') return json(200, settingsJson());
+  if (op === '/Settings' && method === 'POST') {
+    api.saves.push(body); api.customized = true;
+    if (body.RowOrder) api.order = body.RowOrder.concat(ROWS.map(r => r.Id).filter(id => !body.RowOrder.includes(id)));
+    if (body.HiddenRows) api.hidden = body.HiddenRows.slice();
+    if (body.RowLimit) api.limit = body.RowLimit;
+    if (body.SportsLookaheadHours) api.look = body.SportsLookaheadHours;
+    if (body.PlayDelayMs !== undefined && body.PlayDelayMs !== null) api.delay = body.PlayDelayMs;
+    if (body.PlayTimeoutSeconds) api.wait = body.PlayTimeoutSeconds;
+    if (body.SportsTeams) { api.teams = body.SportsTeams.slice(); api.teamsList.forEach(t => { t.Selected = api.teams.includes(t.Name); }); }
+    return json(200, settingsJson());
+  }
+  if (op === '/Settings/Reset') { api.customized = false; api.hidden = []; api.order = ROWS.map(r => r.Id); api.limit = 20; return json(200, settingsJson()); }
+  if (op === '/Sports/Teams') return json(200, { Days: 7, Teams: api.teamsList.map(t => ({ ...t })), Message: null });
+  if (op === '/Requesters') return json(200, { RequestsEnabled: api.requestsEnabled, Requesters: api.requesters, LastRequesterId: api.lastRequester, UsingFallback: false });
+  if (op === '/Request') { api.requests.push(body); return json(200, api.requestStatus === 0 ? { Status: 'failed', Message: 'Request for this media already exists.' } : { Status: api.requestStatus === 2 ? 'approved' : 'requested', RequestId: 9 }); }
+  if (op === '/Play') { api.plays.push(body); return json(200, api.playStatus === 'failed' ? { Status: 'failed', Message: 'This TV has no Emby app device assigned in the ClearFrame settings.' } : { Status: api.playStatus }); }
+  return json(404, { Message: 'Unknown' });
+}
+
+/* ---------- Page harness ---------- */
+function installHarness({ paired, cacheHome, staleMs }) {
+  if (!sessionStorage.getItem('__seeded')) {
+    localStorage.setItem('cleanframe.home.v1', JSON.stringify({ dock: ['stremio', 'netflix', 'disneyplus', 'youtube', 'appletv', 'primevideo', 'abciview', 'sbs', 'applemusic'], wallpaper: 'misty', mode: 'fixed', lastApp: 'netflix', theme: 'shore' }));
+    if (paired) localStorage.setItem('clearframe.server.v1', JSON.stringify({ url: 'http://cf.test:8096', token: 'tok_0123456789abcdefghijklmnop', tvName: 'Living Room' }));
+    if (cacheHome) localStorage.setItem('clearframe.home.cache.v1', JSON.stringify({ at: 1, data: cacheHome }));
+    sessionStorage.setItem('__seeded', '1');
+  }
+  window.ShoreQA = { minuteMs: 60000, pollMs: 40, staleMs: staleMs || 30000 };
+  window.__tv = { calls: [], launchFailure: false };
+  window.tizen = {
+    ApplicationControlData: function (key, value) { this.key = key; this.value = value; },
+    ApplicationControl: function (operation, uri, mime, category, data) { Object.assign(this, { operation, uri, mime, category, data }); },
+    application: {
+      getCurrentApplication() { return { appInfo: { id: 'nClrkHome1.FrameHome' } }; },
+      getAppsInfo(ok) { setTimeout(() => ok([]), 0); },
+      launch(id, ok, fail) { window.__tv.calls.push({ method: 'launch', id }); setTimeout(() => window.__tv.launchFailure ? fail({ name: 'NotFoundError', message: 'missing' }) : ok(), 0); },
+      launchAppControl(control, id, ok) { window.__tv.calls.push({ method: 'launchAppControl', id }); setTimeout(ok, 0); }
+    }
+  };
+}
+async function page(options = {}) {
+  current = await preview.browser.newPage({ viewport: options.viewport || { width: 1920, height: 1080 } });
+  current.setDefaultTimeout(10000);
+  current.on('pageerror', error => report.pageErrors.push({ section, error: error.message }));
+  current.on('requestfailed', request => {
+    const allowed = api.unreachable && request.url().startsWith(SERVER);
+    if (!current || current.__closing || allowed || request.failure()?.errorText === 'net::ERR_ABORTED') return;
+    report.pageErrors.push({ section, url: request.url(), error: request.failure()?.errorText });
+  });
+  await current.route(SERVER + '/**', handle);
+  await current.route('https://image.tmdb.org/**', route => route.fulfill({ status: 200, headers: { 'Content-Type': 'image/svg+xml', 'Access-Control-Allow-Origin': '*' }, body: art('Poster', 200, 300) }));
+  await current.addInitScript(installHarness, { paired: !!options.paired, cacheHome: options.cacheHome || null, staleMs: options.staleMs || 0 });
+  await current.goto(preview.baseURL + '/home/');
+  await current.waitForFunction(() => window.ShoreQA && ShoreQA.ready && ShoreQA.ready());
+  if (options.paired && options.waitRows !== false) await current.waitForFunction(() => ShoreQA.state().media.rows.length > 0 && !ShoreQA.state().media.loading);
+  await current.waitForTimeout(250);
+  return current;
+}
+const state = () => current.evaluate(() => ShoreQA.state());
+const where = () => current.evaluate(() => ShoreQA.where());
+const act = action => current.evaluate(a => ShoreQA.activate(a), action);
+const scene = name => current.evaluate(n => ShoreQA.scene(n), name);
+async function nav(...keys) { for (const k of keys) await current.evaluate(key => ShoreQA.nav(key), k); }
+const shot = name => current.screenshot({ path: out + name + '.png' });
+const until = (fn, arg) => current.waitForFunction(fn, arg, { timeout: 8000 });
+const settle = () => current.waitForTimeout(220);
+async function untilNode(fn, ms = 8000) { const end = Date.now() + ms; while (!fn()) { if (Date.now() > end) throw Error('Timed out waiting for the mock server'); await new Promise(r => setTimeout(r, 30)); } }
+/* Settings lines outside the visible list are not rendered as targets; move down until one is. */
+async function reach(action) {
+  for (let i = 0; i < 24; i++) {
+    if ((await current.evaluate(() => ShoreQA.actions())).includes(action)) return act(action);
+    await nav('down');
+  }
+  throw Error('Could not reach ' + action);
+}
+
+async function main() {
+  preview = await openPreview({ publicFonts: true });
+  try {
+    await run('Unpaired Home is unchanged and contacts no server', async () => {
+      api = freshApi(); await page();
+      const s = await state();
+      check('no media state', !s.media.paired && s.media.rows.length === 0);
+      check('no request to any server', api.calls.length === 0, api.calls);
+      check('rows hidden', await current.locator('#media').evaluate(el => getComputedStyle(el).display) === 'none');
+      await nav('up'); check('Up from the dock still reaches the Home controls', (await where()).zone === 'util');
+      await scene('settings');
+      check('Settings lists Emby & Seerr, not connected', (await current.locator('[data-action="settings.group.media"]').textContent()).includes('Not connected'));
+      const box = await current.locator('.settings-group').evaluateAll(els => els.map(e => e.getBoundingClientRect().bottom));
+      const hint = await current.locator('.settings-overview-hint').evaluate(e => e.getBoundingClientRect().top);
+      check('seven groups fit above the hint', Math.max(...box) < hint, { box, hint });
+      await shot('settings-overview');
+    });
+
+    await run('Pairing with keypad, remote digits and approval', async () => {
+      api = freshApi(); await page();
+      await scene('settings'); await act('settings.group.media');
+      check('Connect opens', (await state()).view === 'connect');
+      await current.keyboard.type('cftest');
+      check('letters are ignored by the keypad', (await current.locator('.cn-field').textContent()).trim() === '192.168.1.10', await current.locator('.cn-field').textContent());
+      await act('connect.key.go');
+      check('empty address explains the format', (await current.locator('.s-sub').textContent()).includes('like 192.168.1.10'));
+      await current.keyboard.type('10.0.0.5');
+      check('focus stays on Connect after using it', (await where()).focusAction === 'connect.key.go');
+      await nav('up', 'ok');                                     // ':' sits above Connect
+      for (const d of '8096') await current.keyboard.press(d);
+      check('address typed with keys and keypad', (await current.locator('.cn-field').textContent()).trim() === '10.0.0.5:8096');
+      await nav('down', 'left', 'ok');                           // Delete
+      check('Delete removes one character', (await current.locator('.cn-field').textContent()).trim() === '10.0.0.5:809');
+      await current.keyboard.press('6'); await shot('connect-keypad');
+      for (let i = 0; i < 13; i++) await current.keyboard.press('Backspace');
+      check('Backspace deletes rather than closing', (await state()).view === 'connect' && (await current.locator('.cn-field').textContent()).trim() === '192.168.1.10');
+      // The mocked server has a hostname, which the keypad can't type.
+      await current.evaluate(() => ShoreQA.typeAddress('cf.test:8096'));
+      await act('connect.key.go');
+      await until(() => ShoreQA.state().media.step === 'code');
+      check('pairing code shown', (await current.locator('.cn-code').textContent()).trim() === 'K7QX');
+      check('pairing sent a device name', api.pairs[0] && api.pairs[0].DeviceName === 'Samsung TV', api.pairs);
+      await shot('connect-code');
+      await until(() => ShoreQA.state().media.step === 'done');
+      const saved = await current.evaluate(() => JSON.parse(localStorage.getItem('clearframe.server.v1')));
+      check('token saved for the server', saved.url === SERVER && saved.token === TOKEN && saved.tvName === 'Living Room', saved);
+      check('token never shown on screen', !(await current.locator('body').textContent()).includes(TOKEN));
+      await nav('ok');
+      await until(() => ShoreQA.state().view === 'mediaset' && !!ShoreQA.state().media.settings);
+      await nav('back', 'back');
+      await until(() => ShoreQA.state().view === 'home' && ShoreQA.state().media.rows.length > 0);
+      check('every authenticated call used the ClearFrame scheme', api.calls.filter(c => c.path.startsWith('/emby/ClearFrame/') && !c.path.includes('/Pair')).every(c => c.auth === 'ClearFrame ' + TOKEN));
+      check('token never sent in a URL', api.calls.every(c => !c.search.includes(TOKEN)));
+    });
+
+    await run('Pairing failures explain themselves', async () => {
+      api = freshApi({ unreachable: true }); await page();
+      await scene('settings'); await act('settings.group.media');
+      await current.evaluate(() => ShoreQA.typeAddress('cf.test'));
+      await act('connect.key.go');
+      await until(() => ShoreQA.state().media.step === 'error');
+      check('unreachable server', (await current.locator('.s-sub').textContent()).includes('Couldn’t reach cf.test:8096'));
+      check('retry and change address offered', (await current.evaluate(() => ShoreQA.actions())).join(',') === 'act.retry,act.edit');
+      api.unreachable = false; api.noPlugin = true;
+      await act('act.retry');
+      await until(() => ShoreQA.state().media.step === 'error' && document.querySelector('.s-sub').textContent.includes('plugin'));
+      check('missing plugin named', (await current.locator('.s-sub').textContent()).includes('ClearFrame plugin isn’t installed'));
+      await act('act.edit');
+      check('Change address returns to the keypad with the address kept', (await state()).media.step === 'address' && (await current.locator('.cn-field').textContent()).trim() === 'cf.test');
+      await nav('back');
+      check('Back closes Connect', (await state()).view === 'settings');
+    });
+
+    await run('Rows on Home: Dock navigation', async () => {
+      api = freshApi(); await page({ paired: true });
+      const s = await state();
+      check('rows in server order, empty rows dropped', s.media.rows.map(r => r.id).join() === 'continue,nextup,livenow,sports,seerr-trending,seerr-movies', s.media.rows.map(r => r.id));
+      check('Home starts on the apps', (await where()).zone === 'apps');
+      await shot('dock-apps');
+      await nav('up');
+      check('Up from the dock enters the first row', (await where()).focusAction === 'media.continue.101', await where());
+      await nav('left');
+      check('Left at the first card stays', (await where()).focusAction === 'media.continue.101');
+      await nav('right', 'right', 'right');
+      check('Right stops at the last card', (await where()).focusAction === 'media.continue.103');
+      check('item titles are escaped', await current.evaluate(() => !window.__mediaXss && !document.querySelector('#media img[src="x"]')));
+      await nav('down');
+      check('Down moves to the next row', (await where()).focusAction === 'media.nextup.200');
+      await nav('right', 'right', 'right', 'right', 'right', 'right');
+      await settle(); await shot('dock-row-scroll');
+      check('long rows scroll to keep focus visible', await current.evaluate(() => { const f = document.querySelector('.mc.is-focus').getBoundingClientRect(), v = document.querySelector('#mediaView').getBoundingClientRect(); return f.left >= v.left - 1 && f.right <= v.right + 1; }));
+      await nav('up');
+      check('rows remember their own card', (await where()).focusAction === 'media.continue.103');
+      await nav('up');
+      check('Up from the first row reaches the Home controls', (await where()).zone === 'util');
+      await nav('down');
+      check('Down from the controls enters the first row', (await where()).focusAction === 'media.continue.103');
+      await nav('down', 'down', 'down', 'down', 'down', 'down');
+      check('Down from the last row returns to the apps', (await where()).zone === 'apps');
+      await nav('up');
+      check('Up returns to the last used row', (await state()).media.row === 'seerr-movies');
+      await nav('back');
+      check('Back from the rows returns to the apps', (await where()).zone === 'apps');
+      check('exactly one focused control', (await where()).focusCount === 1);
+      await nav('up'); await settle(); await shot('dock-rows');
+      const overlap = await current.evaluate(() => { const v = document.querySelector('#mediaView').getBoundingClientRect(), d = document.querySelector('#dock').getBoundingClientRect(); return v.bottom <= d.top; });
+      check('rows end above the dock', overlap);
+      await nav('down', 'down', 'down', 'down', 'down'); await settle();
+      const titles = await current.evaluate(() => { const v = document.querySelector('#mediaView').getBoundingClientRect(); return Array.from(document.querySelectorAll('.mr-title')).filter(t => { const r = t.getBoundingClientRect(); return r.bottom > v.top && r.top < v.bottom; }).map(t => t.getBoundingClientRect().top >= v.top - 1); });
+      check('the last rows scroll to whole rows, titles included', titles.length > 0 && titles.every(Boolean), titles);
+    });
+
+    await run('Rows on Home: List layout and other backgrounds', async () => {
+      api = freshApi(); await page({ paired: true });
+      await current.evaluate(() => ShoreQA.look({ layout: 'list' })); await until(() => ShoreQA.ready());
+      await settle(); await shot('list-apps');
+      const plates = await current.evaluate(() => ({ list: document.querySelector('#phList').getBoundingClientRect().right, media: document.querySelector('#mediaView').getBoundingClientRect().left }));
+      check('List leaves room for the rows column', plates.list <= plates.media, plates);
+      await nav('right');
+      check('Right from the List enters the rows', (await where()).focusAction === 'media.continue.101');
+      await nav('left');
+      check('Left from the first card returns to the List', (await where()).zone === 'apps');
+      await nav('right', 'down', 'down', 'down', 'down', 'down', 'down');
+      check('Down from the last row reaches the controls', (await where()).zone === 'util');
+      await nav('up');
+      check('Up from the first control returns to the last row', (await state()).media.row === 'seerr-movies');
+      await settle(); await shot('list-rows');
+      for (const bg of ['dark', 'light']) {
+        await current.evaluate(b => ShoreQA.look({ bg: b }), bg); await until(() => ShoreQA.ready()); await settle();
+        await shot('list-rows-' + bg);
+      }
+      await current.evaluate(() => ShoreQA.look({ layout: 'dock', bg: 'light' })); await until(() => ShoreQA.ready());
+      await nav('back', 'up'); await settle(); await shot('dock-rows-light');
+    });
+
+    await run('Rows fit at 720p', async () => {
+      api = freshApi(); await page({ paired: true, viewport: { width: 1280, height: 720 } });
+      await nav('up'); await settle(); await shot('dock-rows-720');
+      const fits = await current.evaluate(() => { const v = document.querySelector('#mediaView').getBoundingClientRect(), d = document.querySelector('#dock').getBoundingClientRect(); return v.bottom <= d.top + 1 && v.right <= window.innerWidth; });
+      check('rows stay above the dock and inside the screen', fits);
+    });
+
+    await run('Play and resume ask the server first, then open Emby', async () => {
+      api = freshApi(); await page({ paired: true });
+      await nav('up', 'ok');
+      await until(() => window.__tv.calls.length === 1);
+      check('resume sent before launch', api.plays.length === 1 && api.plays[0].ItemId === '101' && api.plays[0].Action === 'resume', api.plays);
+      check('Emby app launched', (await current.evaluate(() => window.__tv.calls))[0].id === EMBY_APP);
+      await nav('down', 'down', 'ok');
+      await until(() => window.__tv.calls.length === 2);
+      check('Live TV plays the channel', api.plays[1].ItemId === '901' && api.plays[1].Action === 'play', api.plays);
+      api.playStatus = 'failed';
+      await nav('ok'); await until(() => ShoreQA.state().view === 'message');
+      check('server refusal is shown and Emby is not opened', (await current.locator('.msg-line').textContent()).includes('no Emby app device') && (await current.evaluate(() => window.__tv.calls.length)) === 2);
+      await nav('back');
+      api.playStatus = 'queued';
+      await current.evaluate(() => { window.__tv.launchFailure = true; });
+      await nav('ok'); await until(() => ShoreQA.state().view === 'message');
+      check('missing Emby app explained', (await current.locator('.msg-line').textContent()).includes('Emby isn’t installed'));
+    });
+
+    await run('Seerr request with a shared account', async () => {
+      api = freshApi(); await page({ paired: true });
+      await nav('up', 'down', 'down', 'down', 'down', 'right', 'right', 'ok');
+      await until(() => ShoreQA.state().view === 'request' && document.querySelectorAll('.rq-acts .btn').length === 3);
+      check('one button per person, last requester first in focus', (await where()).focusAction === 'act.as.2', await where());
+      check('people named', (await current.locator('.rq-acts').textContent()).includes('Request as Steve'));
+      check('Home rows stay hidden behind the sheet', await current.evaluate(() => Array.from(document.querySelectorAll('#media .mc, #media .mr-title')).every(el => getComputedStyle(el).visibility === 'hidden')));
+      await shot('request-choose');
+      await nav('left', 'ok');
+      await until(() => ShoreQA.state().view === 'request' && document.querySelector('.rq-status').textContent.includes('approved'));
+      check('request sent as the chosen person', api.requests[0].SeerrUserId === 1 && api.requests[0].TmdbId === 502 && api.requests[0].MediaType === 'movie', api.requests);
+      await shot('request-done');
+      await nav('ok');
+      check('Done returns to Home', (await state()).view === 'home');
+      await untilNode(() => api.calls.filter(c => c.path.endsWith('/Home')).length >= 2);
+      await nav('left', 'left', 'ok');
+      await until(() => ShoreQA.state().view === 'request');
+      check('available titles are not requested again', (await current.locator('.rq-status').textContent()).includes('already in your Emby library') && api.calls.filter(c => c.path.endsWith('/Requesters')).length === 1);
+      await nav('back');
+      api.requestStatus = 0;
+      await nav('right', 'right', 'right', 'ok');
+      await until(() => document.querySelectorAll('.rq-acts .btn').length === 3);
+      await nav('ok'); await until(() => document.querySelector('.rq-status .setting-error'));
+      check('Seerr’s refusal is shown with Try again', (await current.locator('.rq-status').textContent()).includes('already exists') && (await current.evaluate(() => ShoreQA.actions())).includes('act.retry'));
+    });
+
+    await run('Single requester and unlinked accounts', async () => {
+      api = freshApi({ requesters: [{ Id: 1, Name: 'Steve' }], lastRequester: null }); await page({ paired: true });
+      await nav('up', 'down', 'down', 'down', 'down', 'right', 'right', 'ok');
+      await until(() => document.querySelectorAll('.rq-acts .btn').length === 2);
+      check('one person: a plain Request button', (await current.locator('.rq-acts .btn').first().textContent()).trim() === 'Request');
+      await nav('back');
+      api.requesters = [];
+      await nav('right', 'ok');
+      await until(() => document.querySelector('.rq-status').textContent.length > 0);
+      check('unlinked account explained', (await current.locator('.rq-status').textContent()).includes('isn’t linked to a Seerr account'));
+    });
+
+    await run('Emby & Seerr settings change this TV', async () => {
+      api = freshApi(); await page({ paired: true });
+      await scene('settings'); await act('settings.group.media');
+      await until(() => !!ShoreQA.state().media.settings);
+      await shot('mediaset');
+      await act('list.row.nextup.toggle');
+      await until(() => !ShoreQA.state().media.saving);
+      check('Hide sends HiddenRows', JSON.stringify(api.saves[0]) === JSON.stringify({ HiddenRows: ['nextup'] }), api.saves);
+      await act('list.row.seerr-trending.up');
+      await until(() => !ShoreQA.state().media.saving);
+      check('Move up sends the new order', api.saves[1].RowOrder.indexOf('seerr-trending') === 3, api.saves[1]);
+      check('focus follows the moved row', (await where()).focusAction === 'list.row.seerr-trending.up');
+      await reach('list.limit.RowLimit:8');
+      await until(() => !ShoreQA.state().media.saving);
+      check('items per row', api.saves[2].RowLimit === 8);
+      await reach('list.delay.PlayDelayMs:3000');
+      await until(() => !ShoreQA.state().media.saving);
+      check('play delay', api.saves[3].PlayDelayMs === 3000);
+      await reach('list.teams.teams');
+      await until(() => ShoreQA.state().view === 'teams' && document.querySelectorAll('.ls-line').length > 3);
+      await shot('teams');
+      await act('list.team.Toronto Blue Jays.toggle');
+      await until(() => !ShoreQA.state().media.saving);
+      check('following a team saves the list', JSON.stringify(api.saves[4].SportsTeams) === JSON.stringify(['Toronto Maple Leafs', 'Toronto Blue Jays']), api.saves[4]);
+      await act('list.done.done');
+      check('Done returns to settings', (await state()).view === 'mediaset');
+      await nav('back', 'back');
+      await until(() => ShoreQA.state().media.rows.map(r => r.id).join() === 'continue,livenow,seerr-trending,sports,seerr-movies');
+      check('Home follows the new order and hidden rows', true);
+      await scene('settings'); await act('settings.group.media'); await until(() => !!ShoreQA.state().media.settings);
+      await reach('list.reset.reset'); await until(() => !ShoreQA.state().media.saving && ShoreQA.state().media.note);
+      check('Use defaults resets', !api.customized && (await state()).media.note.includes('server’s defaults'));
+    });
+
+    await run('Disconnect and a removed TV', async () => {
+      api = freshApi(); await page({ paired: true });
+      await scene('settings'); await act('settings.group.media'); await until(() => !!ShoreQA.state().media.settings);
+      await reach('list.disconnect.disconnect');
+      check('asks first', (await state()).view === 'message');
+      await nav('right', 'ok');
+      const s = await state();
+      check('back on Settings, forgotten', s.view === 'settings' && !s.media.paired && s.media.rows.length === 0);
+      check('storage cleared', await current.evaluate(() => !localStorage.getItem('clearframe.server.v1') && !localStorage.getItem('clearframe.home.cache.v1')));
+      await nav('back');
+      check('Home rows gone', await current.locator('#media').evaluate(el => getComputedStyle(el).display) === 'none');
+      await current.close(); current = null;
+
+      api = freshApi({ unauthorized: true });
+      await page({ paired: true, waitRows: false, cacheHome: homeJson() });
+      await until(() => ShoreQA.state().media.unauthorized);
+      check('rows hidden when the server no longer knows this TV', (await state()).media.rows.length === 0);
+      await scene('settings');
+      check('Settings says to connect again', (await current.locator('[data-action="settings.group.media"]').textContent()).includes('Connect again'));
+      await act('settings.group.media');
+      check('opens Connect with the old address', (await state()).view === 'connect' && (await current.locator('.cn-field').textContent()).trim() === 'cf.test:8096');
+    });
+
+    await run('Cached rows show at once and refresh on return', async () => {
+      api = freshApi(); api.hidden = ['nextup'];
+      await page({ paired: true, cacheHome: { Rows: [{ Id: 'cached', Title: 'From cache', Layout: 'landscape', Items: [{ Id: '1', Kind: 'movie', Title: 'Old', PlayItemId: '1' }] }] }, staleMs: 50, waitRows: false });
+      await until(() => ShoreQA.state().media.rows.some(r => r.id === 'continue'));
+      check('fresh rows replace the cache', !(await state()).media.rows.some(r => r.id === 'cached'));
+      const before = api.calls.filter(c => c.path.endsWith('/Home')).length;
+      api.hidden = [];
+      await current.waitForTimeout(80);
+      await current.evaluate(() => { Object.defineProperty(document, 'hidden', { configurable: true, get: () => false }); document.dispatchEvent(new Event('visibilitychange')); });
+      await until(n => ShoreQA.state().media.rows.some(r => r.id === 'nextup'), before);
+      check('returning to Home refreshes the rows', api.calls.filter(c => c.path.endsWith('/Home')).length === before + 1);
+    });
+  } finally {
+    await preview.close();
+  }
+  writeFileSync(out + 'checks.json', JSON.stringify(report, null, 2));
+  const passed = report.checks.filter(c => c.passed).length;
+  console.log(passed + ' checks passed; ' + report.failures.length + ' failure(s); ' + report.pageErrors.length + ' page error(s). Report: .local/qa/media/checks.json');
+  if (report.pageErrors.length) console.error(JSON.stringify(report.pageErrors.slice(0, 10), null, 1));
+  if (report.failures.length || report.pageErrors.length) process.exit(1);
+}
+main().catch(error => { console.error(error); process.exit(1); });

@@ -34,7 +34,7 @@ Open Dashboard → Plugins → ClearFrame.
 
 ## TV API
 
-Every TV call except pairing sends `X-ClearFrame-Token: <token>`. Responses use Emby's PascalCase JSON. Emby image paths are server-relative, so prefix them with the server address and add `&maxWidth=` as needed.
+Every TV call except pairing sends `Authorization: ClearFrame <token>`. `X-ClearFrame-Token: <token>` is also accepted, but isn't on Emby's CORS allow list. Responses use Emby's PascalCase JSON. Emby image paths are server-relative, so prefix them with the server address and add `&maxWidth=` as needed.
 
 | Method | Path | Body / query | Returns |
 | --- | --- | --- | --- |

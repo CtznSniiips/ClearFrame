@@ -5,6 +5,7 @@
 - Each TV now keeps its own settings, changed from ClearFrame on the TV: which home rows show, their order, items per row, sports look-ahead, play delay and how long to wait for the Emby app. New endpoints: `GET`/`POST /ClearFrame/Settings` and `POST /ClearFrame/Settings/Reset`.
 - Team picker: `GET /ClearFrame/Sports/Teams` lists teams found in the guide's sports listings, so teams can be chosen with the remote instead of typed.
 - Playback uses each TV's own delay and wait time.
+- TVs can send their token as `Authorization: ClearFrame <token>`. Emby's CORS policy already allows that header, so browser-based clients pass the preflight. `X-ClearFrame-Token` still works.
 - The plugin page's home and playback settings are now the defaults for TVs. Each TV card shows whether the TV has changed its settings and can reset it. Every setting has a short explanation, and the Seerr section has its own Save button.
 
 ## 0.1.0

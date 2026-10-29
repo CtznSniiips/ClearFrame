@@ -57,6 +57,53 @@
     } catch (err) { finish(failure(err)); }
   }
   function home(done) { launchApp('com.samsung.tv.csfs', done); }
+  /* Emby for Samsung. ClearFrame asks the Emby server to queue playback first, then opens the app. */
+  var EMBY = 'vYmY3ACVaa.emby';
+  function emby(done) {
+    if (!api()) { unavailable(done); return; }
+    var finish = bounded(done);
+    try {
+      api().launch(EMBY, function () { finish(null); }, function (err) {
+        finish(err && err.name === 'NotFoundError'
+          ? { message: 'Emby isn’t installed on this TV.', detail: 'Install Emby from the Samsung app store, then try again.' }
+          : failure(err));
+      });
+    } catch (err) { finish(failure(err)); }
+  }
+  /* Samsung's product API is only loaded on the TV, and only when pairing needs it. */
+  function identity(done) {
+    var result = { name: 'Samsung TV', duid: null }, finished = false, script;
+    function read() {
+      try {
+        var p = window.webapis && window.webapis.productinfo;
+        if (p) {
+          result.duid = p.getDuid ? String(p.getDuid() || '') || null : null;
+          var model = p.getRealModel ? p.getRealModel() : p.getModel ? p.getModel() : '';
+          if (model) result.name = 'Samsung ' + String(model).slice(0, 40);
+        }
+      } catch (err) { /* keep the generic name */ }
+    }
+    function finish() { if (finished) return; finished = true; read(); done(result); }
+    if (window.webapis || !window.tizen || !window.tizen.systeminfo) { finish(); return; }
+    try {
+      script = document.createElement('script');
+      script.src = '$WEBAPIS/webapis/webapis.js';
+      script.onload = finish; script.onerror = finish;
+      document.head.appendChild(script);
+      setTimeout(finish, 3000);
+    } catch (err) { finish(); }
+  }
+  /* Number keys on remotes that have them, for typing a server address. */
+  function digits() {
+    try {
+      var input = window.tizen && window.tizen.tvinputdevice;
+      if (!input || digits.done) return;
+      var names = ['0', '1', '2', '3', '4', '5', '6', '7', '8', '9', 'Minus'];
+      if (input.registerKeyBatch) input.registerKeyBatch(names);
+      else names.forEach(function (name) { input.registerKey(name); });
+      digits.done = true;
+    } catch (err) { /* arrows and OK still work */ }
+  }
   function settings(done) { launchApp('com.samsung.tv.coba.setting', done); }
   function apps(done) {
     if (!api()) { unavailable(done); return; }
@@ -80,5 +127,5 @@
       }, function (err) { finish(failure(err)); });
     } catch (err) { finish(failure(err)); }
   }
-  window.FrameDevice = { launch: launch, launchApp: launchApp, art: art, home: home, settings: settings, apps: apps };
+  window.FrameDevice = { launch: launch, launchApp: launchApp, art: art, home: home, settings: settings, apps: apps, emby: emby, identity: identity, digits: digits };
 }());
