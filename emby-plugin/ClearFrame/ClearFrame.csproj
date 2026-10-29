@@ -31,7 +31,7 @@
   <!-- Emby's APIs expose ReadOnlySpan overloads; netstandard2.0 needs System.Memory to resolve them.
        Compile-time only: the Emby server runtime already provides it. -->
   <ItemGroup Condition="'$(TargetFramework)' == 'netstandard2.0'">
-    <PackageReference Include="System.Memory" Version="4.5.5" PrivateAssets="all" ExcludeAssets="runtime" />
+    <PackageReference Include="System.Memory" Version="4.6.0" PrivateAssets="all" ExcludeAssets="runtime" />
   </ItemGroup>
 
   <ItemGroup>
