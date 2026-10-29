@@ -99,7 +99,8 @@
       progress: count(it.ProgressPercent) === null ? null : clamp(it.ProgressPercent, 0, 100), position: count(it.PositionTicks), runtime: count(it.RuntimeTicks),
       playId: text(it.PlayItemId, 40), action: it.DefaultAction === 'resume' ? 'resume' : it.DefaultAction === 'request' ? 'request' : 'play',
       channel: text(it.ChannelName, 80), start: text(it.StartDate, 40), airing: it.IsAiring === true,
-      tmdb: count(it.TmdbId) || 0, mediaType: it.MediaType === 'tv' ? 'tv' : it.MediaType === 'movie' ? 'movie' : '', status: STATUS_NAMES[it.RequestStatus] ? it.RequestStatus : 'none' };
+      tmdb: count(it.TmdbId) || 0, mediaType: it.MediaType === 'tv' ? 'tv' : it.MediaType === 'movie' ? 'movie' : '', status: STATUS_NAMES[it.RequestStatus] ? it.RequestStatus : 'none',
+      playAction: it.PlayAction === 'resume' ? 'resume' : 'play' };
   }
   function cleanRows(data) {
     return (data && Array.isArray(data.Rows) ? data.Rows : []).slice(0, 12).map(function (r) {
@@ -646,13 +647,19 @@
     else if (k === 'ok') { mediaOk(row.items[c.i]); return; }
     if (f.zone === 'media') M.row = f.mr;
   }
+  /* Seerr titles already in the library carry a PlayItemId: available ones play on OK,
+     partly available ones offer Play next to Request. */
+  function canPlay(it) { return !!it.playId && (it.kind !== 'discover' || it.status === 'available' || it.status === 'partial'); }
   function mediaOk(it) {
     if (!it) return;
-    if (it.kind === 'discover') { openRequest(it); return; }
-    if (!it.playId || busy) return;
+    if (it.kind === 'discover' && !(it.status === 'available' && it.playId)) { openRequest(it); return; }
+    playItem(it);
+  }
+  function playItem(it) {
+    if (!canPlay(it) || busy) return;
     S.press = null;
     perform(it.title || 'Emby', function (done) {
-      Media.play(it.playId, it.action === 'resume' ? 'resume' : 'play', function (err, result) {
+      Media.play(it.playId, (it.kind === 'discover' ? it.playAction : it.action) === 'resume' ? 'resume' : 'play', function (err, result) {
         if (err) { if (err.code === 'unauthorized') { M.unauthorized = true; } done(mediaError(err)); return; }
         if (result && result.Status === 'failed') { done({ message: result.Message || 'Emby couldn’t start this.', detail: '' }); return; }
         FrameDevice.emby(done);
@@ -1092,16 +1099,18 @@
       else if (!t.requesters.length) requestInfo(t, 'This TV’s Emby account isn’t linked to a Seerr account yet. Link it in the ClearFrame plugin settings on your server.');
       else {
         t.step = 'choose';
-        t.f.b = Math.max(0, t.requesters.map(function (r) { return r.id; }).indexOf(data.LastRequesterId));
+        // Play stays first for partly available shows; otherwise start on the last requester.
+        t.f.b = canPlay(t.item) ? 0 : Math.max(0, t.requesters.map(function (r) { return r.id; }).indexOf(data.LastRequesterId));
       }
       render();
     });
   }
   function requestActions(t) {
-    if (t.step === 'choose') return t.requesters.map(function (r) { return ['as.' + r.id, t.requesters.length > 1 ? 'Request as ' + r.name : 'Request']; }).concat([['close', 'Cancel']]);
-    if (t.step === 'error') return [['retry', 'Try again'], ['close', 'Close']];
-    if (t.step === 'loading' || t.step === 'sending') return [['close', 'Cancel']];
-    return [['close', 'Done']];
+    var play = canPlay(t.item) && t.step !== 'sending' ? [['play', t.item.playAction === 'resume' ? 'Resume' : 'Play']] : [];
+    if (t.step === 'choose') return play.concat(t.requesters.map(function (r) { return ['as.' + r.id, t.requesters.length > 1 ? 'Request as ' + r.name : 'Request']; }), [['close', 'Cancel']]);
+    if (t.step === 'error') return play.concat([['retry', 'Try again'], ['close', 'Close']]);
+    if (t.step === 'loading' || t.step === 'sending') return play.concat([['close', 'Cancel']]);
+    return play.concat([['close', 'Done']]);
   }
   function sendRequest(t, requester) {
     var it = t.item, token = ++t.token;
@@ -1126,6 +1135,7 @@
       else if (k === 'ok') {
         a = A[t.f.b][0];
         if (a === 'close') { t.token++; pop(); }
+        else if (a === 'play') { t.token++; pop(); playItem(t.item); }
         else if (a === 'retry') { if (t.retry) sendRequest(t, t.retry); else loadRequesters(t); }
         else if (a.indexOf('as.') === 0) t.requesters.some(function (r) { if ('as.' + r.id !== a) return false; sendRequest(t, r); return true; });
       }
@@ -1634,7 +1644,11 @@
     return parts.filter(function (p) { return !!p; }).join(' · ');
   }
   function mediaVerb(it) {
-    if (it.kind === 'discover') return it.status === 'none' || it.status === 'partial' ? 'Request' : 'Details';
+    if (it.kind === 'discover') {
+      if (it.status === 'available' && it.playId) return it.playAction === 'resume' ? 'Resume' : 'Play';
+      if (it.status === 'partial' && it.playId) return 'Play or request';
+      return it.status === 'none' || it.status === 'partial' ? 'Request' : 'Details';
+    }
     if (it.kind === 'program') return it.airing ? 'Watch live' : 'Watch channel';
     return it.action === 'resume' ? 'Resume' : 'Play';
   }
@@ -2228,7 +2242,9 @@
       setHTML(el.title, esc(it.title));
       setHTML(el.meta, esc(mediaMeta(it)));
       setHTML(el.overview, esc(it.overview));
-      setHTML(el.status, t.step === 'loading' ? 'Checking who can request…' : t.step === 'sending' ? 'Sending your request…' : t.step === 'choose' ? (t.requesters.length > 1 ? 'Who’s requesting?' : '') : '<span class="' + (t.step === 'error' ? 'setting-error' : '') + '">' + esc(t.message) + '</span>');
+      setHTML(el.status, t.step === 'loading' ? 'Checking who can request…' : t.step === 'sending' ? 'Sending your request…'
+        : t.step === 'choose' ? (canPlay(it) ? 'Some of this is in your Emby library. Play it, or request the rest' + (t.requesters.length > 1 ? '. Who’s requesting?' : '.') : t.requesters.length > 1 ? 'Who’s requesting?' : '')
+        : '<span class="' + (t.step === 'error' ? 'setting-error' : '') + '">' + esc(t.message) + '</span>');
       setHTML(el.acts, actButtons(requestActions(t), t.f.b));
     },
     connect: function (t, el) {

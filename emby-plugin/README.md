@@ -60,7 +60,9 @@ Home items carry what the TV needs to act on them:
 - `ProgressPercent` for progress bars.
 - `PosterUrl` and `LandscapeUrl`.
 - For Live TV: `ChannelName`, `StartDate`, `EndDate` and `IsAiring`.
-- For Seerr items: `TmdbId`, `MediaType` and `RequestStatus` (`none`, `requested`, `processing`, `partial` or `available`).
+- For Seerr items: `TmdbId`, `MediaType` and `RequestStatus` (`none`, `requested`, `processing`, `partial` or `available`). When an available or partly available title is in the Emby library, `PlayItemId` and `PlayAction` (`play` or `resume`) play it: a movie directly, a show at its next episode.
+
+A title appears only once across the rows, in the first row (in the TV's order) that has it. Episodes count as their show, and Seerr titles count as the library item they match.
 
 **Playing from the TV:** call `/ClearFrame/Play` first, then launch the Emby app (`vYmY3ACVaa.emby`). If Emby is already running the command is sent immediately. Otherwise it's queued until the app connects, for up to the TV's `PlayTimeoutSeconds`. It's sent `PlayDelayMs` after the app connects, so the app has time to finish loading.
 

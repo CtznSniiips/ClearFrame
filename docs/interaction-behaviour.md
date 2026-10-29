@@ -1,4 +1,4 @@
-# Interaction behaviour — 0.7.0
+# Interaction behaviour — 0.7.1
 
 ## Home
 
@@ -86,7 +86,8 @@ Nothing changes until the TV is paired with the ClearFrame Emby plugin. An unpai
 - List: the rows form a column on the right and app names give way to it (longer names truncate, with the full name in the caption). Right from the List enters the rows; Left from a row's first card returns to the List; Down from the last row reaches the controls; Up from the first control returns to the last row.
 - Left/Right move along a row without wrapping. Each row remembers its card, and long rows scroll to keep focus in view with the next card peeking. Back returns to the apps. Focus on a card shows its title, details and the OK action above the rows.
 - OK on a library item or Live TV programme asks the server to play, resume (from the saved position) or tune that channel, then opens the Emby app. The server delivers the command when Emby connects. A server refusal or a missing Emby app shows a message, and Emby is not opened after a refusal.
-- OK on a Seerr title opens its request screen. With one linked Seerr account, a single Request button; with several, one button per person, with the last requester focused. Available, requested and processing titles only explain their status. A Seerr refusal is shown with Try again.
+- OK on a Seerr title that is already in the Emby library plays it like a library item: a movie resumes or plays, a show plays its next episode. A partly available title opens its request screen with Play first (focused), then Request. Other Seerr titles open the request screen: with one linked Seerr account, a single Request button; with several, one button per person, with the last requester focused. Requested and processing titles, and available titles the server couldn't find in the library, only explain their status. A Seerr refusal is shown with Try again.
+- Each title appears once on Home, in the first row (in this TV's order) that has it. A show counts as one title, so its episode in Next Up keeps it out of Trending.
 
 Rows are cached so Home shows the last rows at once, then refreshed on start, when Home becomes visible again after 30 seconds away, and every five minutes while Home is visible. If the server no longer knows this TV, the rows disappear and Settings says to connect again, pre-filling the old address.
 
