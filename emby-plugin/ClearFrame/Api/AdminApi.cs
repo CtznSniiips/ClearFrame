@@ -75,6 +75,13 @@ namespace ClearFrame.Api
         public string Id { get; set; }
     }
 
+    [Route("/ClearFrame/Admin/Tvs/ResetSettings", "POST", Summary = "Puts a TV back on the server's default rows and timing.")]
+    [Authenticated(Roles = "Admin")]
+    public class ResetTvSettingsAdmin : IReturn<OkResult>
+    {
+        public string Id { get; set; }
+    }
+
     [Route("/ClearFrame/Admin/Tvs/Delete", "POST", Summary = "Unpairs a TV. Its token stops working immediately.")]
     [Authenticated(Roles = "Admin")]
     public class DeleteTv : IReturn<OkResult>
@@ -128,6 +135,16 @@ namespace ClearFrame.Api
         public string[] SportsTeams { get; set; }
         public string PairedUtc { get; set; }
         public string LastSeenUtc { get; set; }
+
+        /// <summary>True when the TV has changed its own settings; false while it follows the defaults.</summary>
+        public bool SettingsCustomized { get; set; }
+
+        /// <summary>Titles of the rows this TV shows, in order.</summary>
+        public string[] VisibleRows { get; set; }
+        public int RowLimit { get; set; }
+        public int PlayDelayMs { get; set; }
+        public int PlayTimeoutSeconds { get; set; }
+        public int SportsLookaheadHours { get; set; }
 
         /// <summary>The TV's Emby app currently has a session that can be remote-controlled.</summary>
         public bool EmbyAppControllable { get; set; }
@@ -222,8 +239,15 @@ namespace ClearFrame.Api
                 {
                     var user = users.FirstOrDefault(u => u.Id.ToString("N") == t.EmbyUserId);
                     var tvSession = Runtime.Playback.FindSessions(t.EmbyDeviceId, t.Duid).FirstOrDefault();
+                    var settings = TvSettings.Resolve(t, c);
                     return new TvView
                     {
+                        SettingsCustomized = settings.Customized,
+                        VisibleRows = settings.RowOrder.Where(settings.IsVisible).Select(id => TvSettings.FindRow(id).Title).ToArray(),
+                        RowLimit = settings.RowLimit,
+                        PlayDelayMs = settings.PlayDelayMs,
+                        PlayTimeoutSeconds = settings.PlayTimeoutSeconds,
+                        SportsLookaheadHours = settings.SportsLookaheadHours,
                         Id = t.Id,
                         Name = t.Name,
                         EmbyUserId = t.EmbyUserId,
@@ -400,6 +424,17 @@ namespace ClearFrame.Api
             });
 
             return new TvView { Id = updated.Id, Name = updated.Name, EmbyUserId = updated.EmbyUserId, EmbyDeviceId = updated.EmbyDeviceId, Duid = updated.Duid, SportsTeams = updated.SportsTeams };
+        }
+
+        public object Post(ResetTvSettingsAdmin request)
+        {
+            Plugin.Instance.Mutate(c =>
+            {
+                var tv = c.Tvs.FirstOrDefault(t => t.Id == request.Id) ?? throw new ArgumentException("Unknown TV.");
+                tv.Preferences = null;
+            });
+
+            return new OkResult();
         }
 
         public object Post(DeleteTv request)

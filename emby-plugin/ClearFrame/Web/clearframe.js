@@ -158,9 +158,13 @@ define([], function () {
                     '<div class="cf-card-head"><span class="cf-card-title">' + esc(t.Name) + '</span>' +
                     '<span class="cf-status">' + appStatus + ' · ClearFrame last seen ' + esc(ago(t.LastSeenUtc)) +
                     (t.EmbyUserName ? ' · as ' + esc(t.EmbyUserName) : ' · <b>no Emby user</b>') + '</span></div>' +
+                    '<div class="cf-summary">' + (t.SettingsCustomized ? '<b>Settings changed on the TV</b>' : 'Using the TV defaults below') +
+                    ': ' + esc((t.VisibleRows || []).join(', ') || 'no rows') + ' · ' + t.RowLimit + ' per row · play delay ' +
+                    t.PlayDelayMs + ' ms · wait ' + t.PlayTimeoutSeconds + ' s</div>' +
                     tvFields('t', t, state) +
                     '<div class="cf-actions">' +
                     '  <button type="button" class="cf-btn cf-btn-primary" data-act="save-tv">Save</button>' +
+                    (t.SettingsCustomized ? '  <button type="button" class="cf-btn" data-act="reset-tv">Reset TV settings to defaults</button>' : '') +
                     '  <button type="button" class="cf-btn cf-btn-danger" data-act="delete-tv">Unpair</button>' +
                     '</div><div class="cf-message"></div></div>';
             }).join('');
@@ -294,7 +298,10 @@ define([], function () {
                     SeerrApiKey: $('#cfSeerrKey').value.trim()
                 }).then(function (r) { show(msg, r.Message, r.Ok); }, function (err) { show(msg, err.message, false); });
             } else if (name === 'save-settings') {
-                var smsg = cf('settings-message');
+                // Report next to whichever Save was pressed (Seerr card or the defaults section).
+                var smsg = target.closest('.cf-card') && target.closest('.cf-card').querySelector('[data-cf="seerr-message"]')
+                    ? cf('seerr-message')
+                    : cf('settings-message');
                 loading(true);
                 api('POST', 'ClearFrame/Admin/Settings', collectSettings()).then(function (settings) {
                     state.Settings = settings;
@@ -343,6 +350,9 @@ define([], function () {
                 } else if (act === 'save-tv') {
                     values.Id = card.getAttribute('data-tv');
                     call = api('POST', 'ClearFrame/Admin/Tvs/Update', values);
+                } else if (act === 'reset-tv') {
+                    if (!window.confirm('Put this TV back on the default rows and timing? Its sports teams are kept.')) { return; }
+                    call = api('POST', 'ClearFrame/Admin/Tvs/ResetSettings', { Id: card.getAttribute('data-tv') });
                 } else if (act === 'delete-tv') {
                     if (!window.confirm('Unpair this TV? ClearFrame on it will need to pair again.')) { return; }
                     call = api('POST', 'ClearFrame/Admin/Tvs/Delete', { Id: card.getAttribute('data-tv') });

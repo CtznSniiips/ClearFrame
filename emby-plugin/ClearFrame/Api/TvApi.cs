@@ -79,7 +79,93 @@ namespace ClearFrame.Api
         public long? StartPositionTicks { get; set; }
     }
 
+    [Route("/ClearFrame/Settings", "GET", Summary = "This TV's settings: rows (in order, with visibility) and playback timing.")]
+    [Unauthenticated]
+    public class GetTvSettings : IReturn<TvSettingsResponse>
+    {
+    }
+
+    [Route("/ClearFrame/Settings", "POST", Summary = "Changes this TV's settings. Omitted (null) fields stay as they are.")]
+    [Unauthenticated]
+    public class SaveTvSettings : IReturn<TvSettingsResponse>
+    {
+        /// <summary>Row ids in the order to show them. Rows left out follow in default order.</summary>
+        public string[] RowOrder { get; set; }
+
+        /// <summary>Row ids to hide. Replaces the current list.</summary>
+        public string[] HiddenRows { get; set; }
+
+        public int? RowLimit { get; set; }
+        public int? SportsLookaheadHours { get; set; }
+        public int? PlayDelayMs { get; set; }
+        public int? PlayTimeoutSeconds { get; set; }
+
+        /// <summary>Team names for the Your Teams row. Replaces the current list.</summary>
+        public string[] SportsTeams { get; set; }
+    }
+
+    [Route("/ClearFrame/Settings/Reset", "POST", Summary = "Returns this TV to the server's default rows and timing. Sports teams are kept.")]
+    [Unauthenticated]
+    public class ResetTvSettings : IReturn<TvSettingsResponse>
+    {
+    }
+
+    [Route("/ClearFrame/Sports/Teams", "GET", Summary = "Teams found in the guide's upcoming sports listings, for picking with the remote.")]
+    [Unauthenticated]
+    public class GetGuideTeams : IReturn<GuideTeamsResponse>
+    {
+        /// <summary>How many days of guide data to scan. Default 7, maximum 14.</summary>
+        public int? Days { get; set; }
+    }
+
     // ---- Responses ------------------------------------------------------------------------------
+
+    public class TvRowSetting
+    {
+        public string Id { get; set; }
+        public string Title { get; set; }
+
+        /// <summary>library, livetv or seerr.</summary>
+        public string Source { get; set; }
+        public bool Visible { get; set; }
+
+        /// <summary>False when the row can't show anything yet (Seerr not set up, or no teams chosen). Reason says why.</summary>
+        public bool Available { get; set; }
+        public string Reason { get; set; }
+    }
+
+    public class SettingRange
+    {
+        public int Min { get; set; }
+        public int Max { get; set; }
+        public int Default { get; set; }
+    }
+
+    public class TvSettingsResponse
+    {
+        /// <summary>Every row, in this TV's display order.</summary>
+        public List<TvRowSetting> Rows { get; set; }
+        public int RowLimit { get; set; }
+        public int SportsLookaheadHours { get; set; }
+        public int PlayDelayMs { get; set; }
+        public int PlayTimeoutSeconds { get; set; }
+        public string[] SportsTeams { get; set; }
+
+        /// <summary>False while the TV is still on the server defaults.</summary>
+        public bool Customized { get; set; }
+
+        /// <summary>Allowed ranges and server defaults, for building the settings controls.</summary>
+        public Dictionary<string, SettingRange> Ranges { get; set; }
+    }
+
+    public class GuideTeamsResponse
+    {
+        public int Days { get; set; }
+        public List<GuideTeam> Teams { get; set; }
+
+        /// <summary>Set when the guide couldn't be read (e.g. Live TV isn't set up).</summary>
+        public string Message { get; set; }
+    }
 
     public class StartPairingResponse
     {
@@ -326,6 +412,7 @@ namespace ClearFrame.Api
                 return new DispatchResult { Status = "failed", Message = "This TV has no Emby app device assigned in the ClearFrame settings." };
             }
 
+            var timing = TvSettings.Resolve(tv, Plugin.Instance.Configuration);
             return await Runtime.Playback.Dispatch(new PlaybackOrder
             {
                 TvId = tv.Id,
@@ -338,7 +425,159 @@ namespace ClearFrame.Api
                 ItemName = item.Name,
                 Action = action == PlayAction.Details ? PlayAction.Details : PlayAction.Play,
                 StartPositionTicks = action == PlayAction.Details ? null : start,
+                DelayMs = timing.PlayDelayMs,
+                TimeoutSeconds = timing.PlayTimeoutSeconds,
             }).ConfigureAwait(false);
+        }
+
+        public object Get(GetTvSettings request)
+        {
+            return BuildSettingsResponse(Authenticate());
+        }
+
+        public object Post(SaveTvSettings request)
+        {
+            var tvId = Authenticate().Id;
+            TvDevice updated = null;
+            Plugin.Instance.Mutate(c =>
+            {
+                var tv = c.Tvs.FirstOrDefault(t => t.Id == tvId) ?? throw new ResourceNotFoundException("This TV is no longer paired.");
+
+                // First change from the TV: start from the server's defaults so nothing jumps unexpectedly.
+                var p = tv.Preferences ?? new TvPreferences { HiddenRows = TvSettings.DefaultHiddenRows(c).ToArray() };
+
+                if (request.RowOrder != null)
+                {
+                    p.RowOrder = TvSettings.KnownRows(request.RowOrder).Distinct().ToArray();
+                }
+
+                if (request.HiddenRows != null)
+                {
+                    p.HiddenRows = TvSettings.KnownRows(request.HiddenRows).Distinct().ToArray();
+                }
+
+                if (request.RowLimit.HasValue)
+                {
+                    p.RowLimit = TvSettings.Clamp(request.RowLimit.Value, TvSettings.RowLimitRange);
+                }
+
+                if (request.SportsLookaheadHours.HasValue)
+                {
+                    p.SportsLookaheadHours = TvSettings.Clamp(request.SportsLookaheadHours.Value, TvSettings.SportsLookaheadRange);
+                }
+
+                if (request.PlayDelayMs.HasValue)
+                {
+                    p.PlayDelayMs = TvSettings.Clamp(request.PlayDelayMs.Value, TvSettings.PlayDelayRange);
+                }
+
+                if (request.PlayTimeoutSeconds.HasValue)
+                {
+                    p.PlayTimeoutSeconds = TvSettings.Clamp(request.PlayTimeoutSeconds.Value, TvSettings.PlayTimeoutRange);
+                }
+
+                if (request.SportsTeams != null)
+                {
+                    tv.SportsTeams = TvRegistry.CleanTeams(request.SportsTeams);
+                }
+
+                p.UpdatedUtc = DateTime.UtcNow.ToString("o");
+                tv.Preferences = p;
+                updated = tv;
+            });
+
+            return BuildSettingsResponse(updated);
+        }
+
+        public object Post(ResetTvSettings request)
+        {
+            var tvId = Authenticate().Id;
+            TvDevice updated = null;
+            Plugin.Instance.Mutate(c =>
+            {
+                var tv = c.Tvs.FirstOrDefault(t => t.Id == tvId) ?? throw new ResourceNotFoundException("This TV is no longer paired.");
+                tv.Preferences = null;
+                updated = tv;
+            });
+
+            return BuildSettingsResponse(updated);
+        }
+
+        public object Get(GetGuideTeams request)
+        {
+            var tv = Authenticate();
+            var user = Runtime.Home.GetUser(tv);
+            var days = Math.Max(1, Math.Min(14, request.Days ?? 7));
+            var response = new GuideTeamsResponse { Days = days };
+
+            try
+            {
+                var now = DateTimeOffset.UtcNow;
+                var programs = Runtime.Home.GetSportsPrograms(user, now, now.AddDays(days), null, CancellationToken.None);
+                response.Teams = SportsTeams.Collect(
+                    programs.Select(p => Tuple.Create(p.Name, p.EpisodeTitle, p.StartDate)),
+                    tv.SportsTeams);
+
+                if (programs.Length == 0)
+                {
+                    response.Message = "No sports found in the guide for the next " + days + " days.";
+                }
+            }
+            catch (Exception ex)
+            {
+                Runtime.Logger.ErrorException("could not read sports listings for the team picker", ex);
+                response.Teams = SportsTeams.Collect(Enumerable.Empty<Tuple<string, string, DateTimeOffset?>>(), tv.SportsTeams);
+                response.Message = "Couldn't read the TV guide. Is Live TV set up in Emby?";
+            }
+
+            return response;
+        }
+
+        private TvSettingsResponse BuildSettingsResponse(TvDevice tv)
+        {
+            var c = Plugin.Instance.Configuration;
+            var s = TvSettings.Resolve(tv, c);
+            var seerrReady = Runtime.Seerr.IsConfigured;
+            var hasTeams = tv.SportsTeams != null && tv.SportsTeams.Length > 0;
+
+            return new TvSettingsResponse
+            {
+                Rows = s.RowOrder.Select(id =>
+                {
+                    var def = TvSettings.FindRow(id);
+                    var row = new TvRowSetting { Id = id, Title = def.Title, Source = def.Source, Visible = s.IsVisible(id), Available = true };
+                    if (def.Source == "seerr" && !seerrReady)
+                    {
+                        row.Available = false;
+                        row.Reason = "Seerr isn't set up on the server.";
+                    }
+                    else if (id == TvSettings.Sports && !hasTeams)
+                    {
+                        row.Available = false;
+                        row.Reason = "Choose your teams first.";
+                    }
+
+                    return row;
+                }).ToList(),
+                RowLimit = s.RowLimit,
+                SportsLookaheadHours = s.SportsLookaheadHours,
+                PlayDelayMs = s.PlayDelayMs,
+                PlayTimeoutSeconds = s.PlayTimeoutSeconds,
+                SportsTeams = tv.SportsTeams ?? new string[0],
+                Customized = s.Customized,
+                Ranges = new Dictionary<string, SettingRange>
+                {
+                    { "RowLimit", Range(TvSettings.RowLimitRange, c.RowLimit) },
+                    { "SportsLookaheadHours", Range(TvSettings.SportsLookaheadRange, c.SportsLookaheadHours) },
+                    { "PlayDelayMs", Range(TvSettings.PlayDelayRange, c.PlayDelayMs) },
+                    { "PlayTimeoutSeconds", Range(TvSettings.PlayTimeoutRange, c.PlayTimeoutSeconds) },
+                },
+            };
+        }
+
+        private static SettingRange Range(int[] range, int serverDefault)
+        {
+            return new SettingRange { Min = range[0], Max = range[1], Default = TvSettings.Clamp(serverDefault, range) };
         }
 
         private int[] AllowedRequesterIds(TvDevice tv, out bool usingFallback)

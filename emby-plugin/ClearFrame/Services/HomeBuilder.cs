@@ -118,8 +118,9 @@ namespace ClearFrame.Services
         public async Task<HomeResponse> Build(TvDevice tv, CancellationToken ct)
         {
             var config = Plugin.Instance.Configuration;
+            var settings = TvSettings.Resolve(tv, config);
             var user = GetUser(tv);
-            var limit = Math.Max(1, Math.Min(100, config.RowLimit));
+            var limit = settings.RowLimit;
             var response = new HomeResponse
             {
                 TvName = tv.Name,
@@ -136,19 +137,22 @@ namespace ClearFrame.Services
                 EnableUserData = true,
             };
 
+            // Rows are built into this map, then emitted in the TV's chosen order.
+            var built = new Dictionary<string, HomeRow>();
+
             // Seerr calls run in parallel with the local queries.
             var seerrTasks = new List<Tuple<string, string, Task<List<SeerrMedia>>>>();
             if (_seerr.IsConfigured)
             {
-                if (config.ShowSeerrTrending) seerrTasks.Add(Tuple.Create("trending", "Trending", SafeDiscover("trending", ct)));
-                if (config.ShowSeerrPopularMovies) seerrTasks.Add(Tuple.Create("movies", "Popular Movies", SafeDiscover("movies", ct)));
-                if (config.ShowSeerrPopularShows) seerrTasks.Add(Tuple.Create("tv", "Popular Shows", SafeDiscover("tv", ct)));
+                if (settings.IsVisible(TvSettings.SeerrTrending)) seerrTasks.Add(Tuple.Create(TvSettings.SeerrTrending, "trending", SafeDiscover("trending", ct)));
+                if (settings.IsVisible(TvSettings.SeerrMovies)) seerrTasks.Add(Tuple.Create(TvSettings.SeerrMovies, "movies", SafeDiscover("movies", ct)));
+                if (settings.IsVisible(TvSettings.SeerrShows)) seerrTasks.Add(Tuple.Create(TvSettings.SeerrShows, "tv", SafeDiscover("tv", ct)));
             }
 
             var resumeIds = new HashSet<string>();
-            if (config.ShowContinueWatching)
+            if (settings.IsVisible(TvSettings.Continue))
             {
-                AddRow(response, "continue", "Continue Watching", "landscape", () =>
+                AddRow(response, built, TvSettings.Continue, "landscape", () =>
                 {
                     var items = _library.GetItemList(new InternalItemsQuery(user)
                     {
@@ -170,9 +174,9 @@ namespace ClearFrame.Services
                 });
             }
 
-            if (config.ShowNextUp)
+            if (settings.IsVisible(TvSettings.NextUp))
             {
-                AddRow(response, "nextup", "Next Up", "landscape", () =>
+                AddRow(response, built, TvSettings.NextUp, "landscape", () =>
                 {
                     var result = _tv.GetNextUp(new NextUpQuery { UserId = user.InternalId, Limit = limit + resumeIds.Count }, user, dtoOptions);
                     var items = result?.Items ?? new BaseItem[0];
@@ -184,9 +188,9 @@ namespace ClearFrame.Services
                 });
             }
 
-            if (config.ShowLiveNow)
+            if (settings.IsVisible(TvSettings.LiveNow))
             {
-                AddRow(response, "livenow", "On Now", "landscape", () =>
+                AddRow(response, built, TvSettings.LiveNow, "landscape", () =>
                 {
                     var result = _liveTv.GetRecommendedPrograms(new InternalItemsQuery(user)
                     {
@@ -200,27 +204,19 @@ namespace ClearFrame.Services
             }
 
             var teams = tv.SportsTeams ?? new string[0];
-            if (config.ShowSports && teams.Length > 0)
+            if (settings.IsVisible(TvSettings.Sports) && teams.Length > 0)
             {
-                AddRow(response, "sports", "Your Teams", "landscape", () =>
+                AddRow(response, built, TvSettings.Sports, "landscape", () =>
                 {
                     var now = DateTimeOffset.UtcNow;
-                    var result = _liveTv.GetPrograms(new InternalItemsQuery(user)
-                    {
-                        IsSports = true,
-                        MinEndDate = now,
-                        MaxStartDate = now.AddHours(Math.Max(1, config.SportsLookaheadHours)),
-                        OrderBy = new[] { ValueTuple.Create(ItemSortBy.StartDate, SortOrder.Ascending) },
-                        Limit = 2000,
-                        DtoOptions = dtoOptions,
-                    }, ct);
+                    var programs = GetSportsPrograms(user, now, now.AddHours(settings.SportsLookaheadHours), dtoOptions, ct);
 
-                    return (result?.Items ?? new BaseItemDto[0])
+                    return programs
                         .Where(p => MatchesTeam(p, teams))
                         .Select(MapProgram)
                         .Where(p => p.PlayItemId != null)
                         // Same game is often on several channels; keep the first listing of each.
-                        .GroupBy(p => (p.Title ?? string.Empty) + "|" + p.StartDate)
+                        .GroupBy(p => (p.Title ?? string.Empty) + "|" + (p.Subtitle ?? string.Empty) + "|" + p.StartDate)
                         .Select(g => g.First())
                         .OrderByDescending(p => p.IsAiring == true)
                         .ThenBy(p => p.StartDate, StringComparer.Ordinal)
@@ -242,9 +238,17 @@ namespace ClearFrame.Services
                     continue;
                 }
 
-                var row = new HomeRow { Id = "seerr-" + t.Item1, Title = t.Item2, Layout = "poster" };
+                var row = new HomeRow { Id = t.Item1, Title = TvSettings.FindRow(t.Item1).Title, Layout = "poster" };
                 row.Items.AddRange(results.Take(limit).Select(MapSeerr));
                 if (row.Items.Count > 0)
+                {
+                    built[row.Id] = row;
+                }
+            }
+
+            foreach (var id in settings.RowOrder)
+            {
+                if (built.TryGetValue(id, out var row))
                 {
                     response.Rows.Add(row);
                 }
@@ -253,14 +257,31 @@ namespace ClearFrame.Services
             return response;
         }
 
-        private void AddRow(HomeResponse response, string id, string title, string layout, Func<List<HomeItem>> build)
+        /// <summary>Sports programmes in the guide between two times, soonest first.</summary>
+        public BaseItemDto[] GetSportsPrograms(User user, DateTimeOffset from, DateTimeOffset to, DtoOptions dtoOptions, CancellationToken ct)
         {
+            var result = _liveTv.GetPrograms(new InternalItemsQuery(user)
+            {
+                IsSports = true,
+                MinEndDate = from,
+                MaxStartDate = to,
+                OrderBy = new[] { ValueTuple.Create(ItemSortBy.StartDate, SortOrder.Ascending) },
+                Limit = 5000,
+                DtoOptions = dtoOptions ?? new DtoOptions(false),
+            }, ct);
+
+            return result?.Items ?? new BaseItemDto[0];
+        }
+
+        private void AddRow(HomeResponse response, Dictionary<string, HomeRow> built, string id, string layout, Func<List<HomeItem>> build)
+        {
+            var title = TvSettings.FindRow(id).Title;
             try
             {
                 var items = build();
                 if (items.Count > 0)
                 {
-                    response.Rows.Add(new HomeRow { Id = id, Title = title, Layout = layout, Items = items });
+                    built[id] = new HomeRow { Id = id, Title = title, Layout = layout, Items = items };
                 }
             }
             catch (Exception ex)

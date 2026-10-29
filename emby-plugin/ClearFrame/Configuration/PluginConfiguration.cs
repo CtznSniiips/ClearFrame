@@ -74,9 +74,34 @@ namespace ClearFrame.Configuration
         /// <summary>Team names / keywords for the Sports row.</summary>
         public string[] SportsTeams { get; set; } = new string[0];
 
+        /// <summary>Settings changed from the TV. Null until the TV saves its own; until then the server defaults apply.</summary>
+        public TvPreferences Preferences { get; set; }
+
         public string PairedUtc { get; set; }
 
         public string LastSeenUtc { get; set; }
+    }
+
+    /// <summary>
+    /// Viewing and playback settings a TV manages itself. Any value left null/0 falls back to the
+    /// server default in <see cref="PluginConfiguration"/>.
+    /// </summary>
+    public class TvPreferences
+    {
+        /// <summary>Row ids in display order. Rows not listed keep their default order after these.</summary>
+        public string[] RowOrder { get; set; } = new string[0];
+
+        /// <summary>Row ids the TV has turned off.</summary>
+        public string[] HiddenRows { get; set; } = new string[0];
+
+        public int RowLimit { get; set; }
+        public int SportsLookaheadHours { get; set; }
+
+        /// <summary>-1 means "use the default"; 0 is a valid choice (no delay).</summary>
+        public int PlayDelayMs { get; set; } = -1;
+        public int PlayTimeoutSeconds { get; set; }
+
+        public string UpdatedUtc { get; set; }
     }
 
     public static class LinkSource
