@@ -1125,8 +1125,31 @@
   };
 
   /* ---------- Seerr request ---------- */
+  /* Credits and details for the request screen, from Seerr through the plugin. Kept for the session. */
+  var DETAILS = {};
+  function names(v, n) { return (Array.isArray(v) ? v : []).filter(function (x) { return typeof x === 'string' && x; }).slice(0, n).map(function (x) { return x.slice(0, 80); }); }
+  function cleanDetails(d) {
+    if (!d || typeof d !== 'object') return null;
+    return { tagline: text(d.Tagline, 200), overview: text(d.Overview, 900), genres: names(d.Genres, 3), runtime: count(d.RuntimeMinutes), seasons: count(d.Seasons), rating: count(d.Rating),
+      directors: names(d.Directors, 3), writers: names(d.Writers, 3), creators: names(d.Creators, 3), networks: names(d.Networks, 2),
+      cast: (Array.isArray(d.Cast) ? d.Cast : []).slice(0, 12).filter(function (c) { return c && typeof c.Name === 'string' && c.Name; })
+        .map(function (c) { return { name: text(c.Name, 80), character: text(c.Character, 80), photo: text(c.PhotoUrl, 400) }; }) };
+  }
+  function loadDetails(t) {
+    var it = t.item, key = it.mediaType + ':' + it.tmdb;
+    if (it.kind !== 'discover' || !it.tmdb || !it.mediaType) { t.details = 'none'; return; }
+    if (DETAILS[key]) { t.details = DETAILS[key]; return; }
+    t.details = null;
+    Media.details(it.mediaType, it.tmdb, function (err, data) {
+      var d = err ? null : cleanDetails(data);
+      if (d) DETAILS[key] = d;
+      t.details = d || 'none';
+      if (top() === t) render();
+    });
+  }
   function openRequest(it) {
-    var t = push({ id: 'request', item: it, step: 'loading', requesters: [], last: null, message: '', token: 0, f: { b: 0 } });
+    var t = push({ id: 'request', item: it, step: 'loading', requesters: [], last: null, message: '', token: 0, details: null, f: { b: 0 } });
+    loadDetails(t);
     if (it.status === 'available' || it.status === 'processing' || it.status === 'requested') { requestInfo(t, it.status === 'available' ? 'This is already in your Emby library.' : it.status === 'processing' ? 'This has been requested and is on its way.' : 'This has already been requested.'); return; }
     if (M.data && M.data.RequestsEnabled === false) { requestInfo(t, 'Requests are turned off on your Emby server.'); return; }
     loadRequesters(t);
@@ -2380,7 +2403,8 @@
     },
     request: function () {
       return '<div class="rq-art" data-slot="art"></div><div class="rq-copy"><h2 class="rq-title" data-slot="title"></h2><p class="rq-meta" data-slot="meta"></p>'
-        + '<p class="rq-overview" data-slot="overview"></p><p class="rq-status" data-slot="status" aria-live="polite"></p><div class="msg-acts rq-acts" data-slot="acts"></div></div>';
+        + '<p class="rq-tagline" data-slot="tagline"></p><p class="rq-overview" data-slot="overview"></p><div class="rq-facts" data-slot="facts"></div><div class="rq-cast" data-slot="cast"></div>'
+        + '<p class="rq-status" data-slot="status" aria-live="polite"></p><div class="msg-acts rq-acts" data-slot="acts"></div></div>';
     },
     connect: function () {
       return '<h2 class="s-title">Connect to Emby</h2><p class="s-sub" data-slot="sub" aria-live="polite"></p><div class="cn-body" data-slot="body"></div><div class="msg-acts cn-acts" data-slot="acts"></div>';
@@ -2388,6 +2412,37 @@
     mediaset: listFrame,
     teams: listFrame
   };
+  function hours(min) { return min >= 60 ? Math.floor(min / 60) + 'h' + (min % 60 ? ' ' + min % 60 + 'm' : '') : min + 'm'; }
+  /* While details load their space is kept, so the buttons below don't move when they arrive. */
+  function fillDetails(t, el) {
+    var it = t.item, d = t.details && t.details !== 'none' ? t.details : null, waiting = t.details === null, facts = [], meta;
+    meta = [it.year ? String(it.year) : '', it.mediaType === 'tv' ? 'Series' : 'Film'];
+    if (d && it.mediaType === 'tv' && d.seasons) meta.push(d.seasons === 1 ? '1 season' : d.seasons + ' seasons');
+    else if (d && d.runtime) meta.push(hours(d.runtime));
+    if (d && d.genres.length) meta.push(d.genres.join(', '));
+    if (d && d.rating) meta.push('TMDB ' + d.rating.toFixed(1));
+    if (STATUS_NAMES[it.status]) meta.push(STATUS_NAMES[it.status]);
+    setHTML(el.meta, esc(meta.filter(function (p) { return !!p; }).join(' · ')));
+    setHTML(el.tagline, d && d.tagline ? esc(d.tagline) : '');
+    setHTML(el.overview, esc(it.overview || (d ? d.overview : '')));
+    if (d) {
+      if (d.directors.length) facts.push(['Directed by', d.directors]);
+      if (d.creators.length) facts.push(['Created by', d.creators]);
+      if (d.writers.length && it.mediaType !== 'tv') facts.push(['Written by', d.writers]);
+      if (d.networks.length) facts.push(['On', d.networks]);
+    }
+    el.facts.className = 'rq-facts' + (waiting ? ' is-waiting' : '');
+    setHTML(el.facts, facts.slice(0, 2).map(function (f) { return '<p class="rq-fact"><span class="rq-fact-k">' + esc(f[0]) + '</span> ' + esc(f[1].join(', ')) + '</p>'; }).join(''));
+    el.cast.className = 'rq-cast' + (waiting ? ' is-waiting' : '') + (d && d.cast.length ? ' has-cast' : '');
+    setHTML(el.cast, d && d.cast.length ? '<p class="rq-fact-k rq-cast-k">Cast</p><div class="rq-people">' + d.cast.slice(0, 7).map(function (c) {
+      return '<div class="rq-person"><span class="rq-face">' + (c.photo ? '<img alt="" src="' + esc(Media.image(c.photo, 185)) + '">' : '<span class="rq-initials">' + esc(c.name.split(/\s+/).map(function (w) { return w.charAt(0); }).slice(0, 2).join('')) + '</span>') + '</span>'
+        + '<span class="rq-name">' + esc(c.name) + '</span>' + (c.character ? '<span class="rq-role">' + esc(c.character) + '</span>' : '') + '</div>';
+    }).join('') + '</div>' : '');
+    Array.prototype.forEach.call(el.cast.querySelectorAll('img'), function (img) {
+      if (img._wired) return; img._wired = true;
+      img.onerror = function () { this.style.display = 'none'; };
+    });
+  }
   function listFrame() {
     return '<h2 class="s-title" data-slot="title"></h2><p class="s-sub" data-slot="sub" aria-live="polite"></p><div class="ls-view" data-slot="view"><div class="ls-in" data-slot="list"></div></div>'
       + '<div class="row-cue ls-before" data-slot="before" aria-hidden="true">' + icon('up') + '</div><div class="row-cue ls-after" data-slot="after" aria-hidden="true">' + icon('down') + '</div>';
@@ -2535,8 +2590,7 @@
         if (img) { img.onload = function () { this.className = 'is-loaded'; }; img.onerror = function () { this.className = 'is-missing'; }; img.src = src; }
       }
       setHTML(el.title, esc(it.title));
-      setHTML(el.meta, esc(mediaMeta(it)));
-      setHTML(el.overview, esc(it.overview));
+      fillDetails(t, el);
       setHTML(el.status, t.step === 'loading' ? 'Checking who can request…' : t.step === 'sending' ? 'Sending your request…'
         : t.step === 'choose' ? (canPlay(it) ? 'Some of this is in your Emby library. Play it, or request the rest' + (t.requesters.length > 1 ? '. Who’s requesting?' : '.') : t.requesters.length > 1 ? 'Who’s requesting?' : '')
         : '<span class="' + (t.step === 'error' ? 'setting-error' : '') + '">' + esc(t.message) + '</span>');

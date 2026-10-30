@@ -43,6 +43,7 @@ Every TV call except pairing sends `Authorization: Lobby <token>`. `X-Lobby-Toke
 | GET | `/emby/Lobby/Pair/Status` | `?PairingId=&Secret=` | `{ Status: pending, approved, rejected or expired, Token, TvName }`. `Token` is returned once; store it. |
 | GET | `/emby/Lobby/Ping` | | `{ TvName, UserName }`. A 401 means the TV was unpaired. |
 | GET | `/emby/Lobby/Home` | | `{ TvName, UserName, RequestsEnabled, Rows: [{ Id, Title, Layout, Items }], Warnings }` |
+| GET | `/emby/Lobby/Details` | `?MediaType=movie or tv&TmdbId=` | `{ Tagline, Overview, Genres, RuntimeMinutes, Seasons, Rating, Directors, Writers, Creators, Networks, Cast: [{ Name, Character, PhotoUrl }] }` from Seerr, for the request screen. Cast is top-billed, at most twelve. |
 | GET | `/emby/Lobby/Requesters` | | `{ RequestsEnabled, Requesters: [{ Id, Name, AvatarUrl }], LastRequesterId, UsingFallback }` |
 | POST | `/emby/Lobby/Request` | `{ TmdbId, MediaType: movie or tv, SeerrUserId }` | `{ Status: requested, approved or failed, Message, RequestId }` |
 | POST | `/emby/Lobby/Play` | `{ ItemId, Action: play, resume or details, StartPositionTicks? }` | `{ Status: sent, queued or failed, Message }` |

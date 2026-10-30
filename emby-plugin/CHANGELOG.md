@@ -2,6 +2,7 @@
 
 ## 0.3.0
 
+- `GET /Lobby/Details`: a Seerr title's tagline, overview, genres, runtime or seasons, rating, directors, writers, creators, networks and top-billed cast (with role and photo), for the TV's request screen. Uses the same 12-hour cache as featured taglines.
 - Renamed from ClearFrame to **Lobby**: `Lobby.dll`, a new plugin ID, the TV API under `/emby/Lobby/…` and the `Authorization: Lobby <token>` scheme (or `X-Lobby-Token`). This is a clean break: remove `ClearFrame.dll` (and `ClearFrame.xml` under `plugins/configuration`) when installing, then set up Seerr and pair each TV again.
 - Featured games: for the first two teams in a TV's Your Teams list, a game that's on now or starts within the hour leads the featured titles, with the matchup as its tagline, the channel logo and any programme artwork. It leaves the Your Teams row while featured.
 - `Featured`: up to five titles for the top of Home, mixing the title watched most recently, the newest unwatched library additions and the top of Seerr's Trending list. Each carries a tagline, backdrop, logo (when the library has one), a details line and the reason it was picked. Featured titles aren't repeated in the rows.
