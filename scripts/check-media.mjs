@@ -506,6 +506,10 @@ async function main() {
       check('the rail names the focused control', await current.locator('.wr-btn.is-focus .wr-label').evaluate(el => getComputedStyle(el).opacity) !== '0');
       await nav('down', 'down');
       check('the rail holds Art Mode, All apps and Settings', (await where()).focusAction === 'util.settings');
+      await nav('down');
+      check('Down from Settings reaches the app dock', (await where()).focusAction === 'home.app.stremio', await where());
+      await nav('left');
+      check('Left from the first app returns to the rail where it left', (await where()).focusAction === 'util.settings', await where());
       await nav('ok');
       check('Settings opens from the rail', (await state()).view === 'settings');
       await nav('back');

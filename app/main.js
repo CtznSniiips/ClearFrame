@@ -1828,6 +1828,7 @@
     if (f.zone === 'wrail') {
       if (k === 'up' && f.u > 0) f.u--;
       else if (k === 'down' && f.u < W_RAIL.length - 1) f.u++;
+      else if (k === 'down') wDock(f);
       else if (k === 'right' || k === 'back') wTop(f);
       else if (k === 'ok') { S.lastUtil = f.u; utilAction(W_RAIL[f.u]); return; }
       S.lastUtil = f.u;
