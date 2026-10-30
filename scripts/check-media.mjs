@@ -51,7 +51,7 @@ const ITEMS = {
   'seerr-tv': []
 };
 const FEATURED = [
-  { Id: 'f1', Kind: 'movie', Title: 'Arrival', Tagline: 'Why are they here?', Overview: 'A linguist works with the military to communicate with alien lifeforms after twelve mysterious spacecraft appear around the world.',
+  { Id: 'f1', Kind: 'movie', Title: 'Arrival', Tagline: 'Twelve ships, one language, and plenty of questions — why are they really here, anyway?', Overview: 'A linguist works with the military to communicate with alien lifeforms after twelve mysterious spacecraft appear around the world.',
     BackdropUrl: '/emby/Items/f1/Images/Backdrop?tag=1', Meta: '2016 · PG-13 · 1h 10m left', FeatureReason: 'resume', PlayItemId: '101', DefaultAction: 'resume', ProgressPercent: 42 },
   { Id: 'movie:880', Kind: 'discover', Title: 'The Long Walk', Overview: 'Teenage boys compete in an annual walking contest with deadly rules.', BackdropUrl: 'https://image.tmdb.org/t/p/w1280/b.jpg',
     Meta: '2025 · Movie · Thriller · 1h 48m', FeatureReason: 'trending', TmdbId: 880, MediaType: 'movie', RequestStatus: 'none', DefaultAction: 'request' },
@@ -487,7 +487,20 @@ async function main() {
       const dock = await rect('#wDock');
       check('the apps dock shows at the bottom from the start', (await current.locator('#wDock .wapp').count()) === 9 && dock.b <= 1080 && dock.y >= 900, dock);
       check('Home starts on the featured title', (await where()).focusAction === 'watch.featured.f1', await where());
-      check('the tagline heads the featured title', (await current.locator('.wi-head').textContent()) === 'Why are they here?');
+      check('the tagline heads the featured title', (await current.locator('.wi-head').textContent()) === 'Twelve ships, one language, and plenty of questions — why are they really here, anyway?');
+      // Letters below the line (g, j, p, q, y) need room inside the two-line clamp.
+      const clip = await current.evaluate(() => {
+        const head = document.querySelector('.wi-head'), size = parseFloat(getComputedStyle(head).fontSize), range = document.createRange();
+        range.selectNodeContents(head);
+        const box = head.getBoundingClientRect(), line = parseFloat(getComputedStyle(head).lineHeight);
+        // Text past the two-line clamp still has line boxes; only the shown lines matter.
+        // A line's text box spans its full ascent and descent, so it must sit inside the headline.
+        const shown = Array.prototype.filter.call(range.getClientRects(), r => (r.top + r.bottom) / 2 < box.top + 2 * line);
+        return { room: box.bottom - Math.max.apply(null, shown.map(r => r.bottom)), size, lines: new Set(shown.map(r => Math.round(r.top))).size };
+      });
+      check('a long tagline takes two lines and leaves room for descenders', clip.lines === 2 && clip.room >= 0, clip);
+      const info = await rect('.w-info'), firstRow = await rect('.wr-title');
+      check('the featured text stays above the first row', info.b <= firstRow.y, { info, firstRow });
       check('the button names the action', (await current.locator('.wi-btn').textContent()) === 'Resume');
       check('reason and details beside the button', (await current.locator('.wi-meta').textContent()) === 'Continue watching · 2016 · PG-13 · 1h 10m left');
       check('the title shows as art when there is no logo', (await current.locator('.wa-title').textContent()) === 'Arrival');
