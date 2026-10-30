@@ -89,7 +89,7 @@
   var M = { cfg: null, data: null, rows: [], loading: false, error: null, at: 0, request: 0, unauthorized: false,
     featured: [], cols: {}, row: 0, settings: null, settingsLoading: false, settingsError: null, saving: null, note: null, timer: 0 };
   var MEDIA_KINDS = ['movie', 'episode', 'series', 'program', 'discover'];
-  var REASON_NAMES = { resume: 'Continue watching', nextup: 'Up next', 'new': 'New in your library', trending: 'Trending' };
+  var REASON_NAMES = { game: 'Your team', resume: 'Continue watching', nextup: 'Up next', 'new': 'New in your library', trending: 'Trending' };
   var STATUS_NAMES = { available: 'Available', partial: 'Partly available', processing: 'Processing', requested: 'Requested' };
   var SOURCE_NAMES = { library: 'From your Emby library', livetv: 'From Emby Live TV', seerr: 'From Seerr' };
   var REFRESH_MS = 5 * 60000;
@@ -109,7 +109,8 @@
   function cleanFeatured(data) {
     var seen = {};
     return (data && Array.isArray(data.Featured) ? data.Featured : []).slice(0, 8).map(cleanItem).filter(function (it) {
-      if (!it || !it.id || seen[it.id] || !(it.backdrop || it.landscape)) return false; seen[it.id] = true; return true;
+      // Games may have no artwork; they still lead the featured area.
+      if (!it || !it.id || seen[it.id] || !(it.backdrop || it.landscape || it.kind === 'program')) return false; seen[it.id] = true; return true;
     });
   }
   /* Rows and featured titles always change together. */
@@ -1769,30 +1770,30 @@
      Rail (Art Mode, All apps, Settings) and a featured title at the top, then bands of rows:
      paired rows share a band side by side, and the Home apps come last. While a row has focus,
      the top area describes the focused title instead of the featured one. */
-  var W_PAIRS = { 'continue': 'nextup', nextup: 'continue', 'seerr-trending': 'sports', sports: 'seerr-trending' };
-  var W_LEFT = { 'continue': true, 'seerr-trending': true };
   var W_RAIL = ['art', 'apps', 'settings'], W_ZONES = ['wrail', 'whero', 'wband', 'wapps'];
   var WG = { x: 72, width: 1776, half: 864, gap: 48, hero: 452, slot: 336, title: 42, after: 22, labels: 60, bottom: 924,
     tile: { w: 240, h: 135, pitch: 254 }, card: { w: 256, h: 144, pitch: 272 }, app: { w: 168, h: 96, pitch: 176 } };
   var DAYS = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'], MONTHS = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
   /* Seerr rows are artwork only, as tiles; library and Live TV rows carry a title and detail line. */
   function wStyle(row) { return row.id.indexOf('seerr-') === 0 ? 'tile' : 'card'; }
+  /* One row per band. Continue Watching and Next Up merge into a single Continue Watching row:
+     titles in progress first, then the next episodes. */
   function wBands() {
-    var bands = [], used = {};
+    var rows = [], merged = null;
     M.rows.forEach(function (row) {
-      var mate, rows;
-      if (used[row.id]) return;
-      used[row.id] = true;
-      mate = W_PAIRS[row.id] ? M.rows.filter(function (r) { return r.id === W_PAIRS[row.id] && !used[r.id]; })[0] : null;
-      if (mate) used[mate.id] = true;
-      // Continue Watching sits left of Next Up, and Trending left of Your Teams, whichever comes first.
-      rows = !mate ? [row] : W_LEFT[row.id] ? [row, mate] : [mate, row];
-      bands.push({ key: rows.map(function (r) { return r.id; }).join('+'), kind: 'rows', rows: rows });
+      if (row.id !== 'continue' && row.id !== 'nextup') { rows.push(row); return; }
+      if (merged) { merged.items = merged.items.concat(row.items.filter(function (it) { return !merged.items.some(function (m) { return m.id === it.id; }); })); return; }
+      merged = { id: 'continue', title: 'Continue Watching', layout: row.layout, items: row.items.slice() };
+      rows.push(merged);
     });
-    bands.forEach(function (band) {
-      band.h = WG.title + WG.after + (Math.max.apply(null, band.rows.map(function (row) { var st = wStyle(row); return WG[st].h + (st === 'card' ? WG.labels : 0); })));
+    if (merged) {
+      // Whichever came first in the TV's order, titles in progress lead.
+      merged.items = merged.items.filter(function (it) { return it.action === 'resume'; }).concat(merged.items.filter(function (it) { return it.action !== 'resume'; }));
+    }
+    return rows.map(function (row) {
+      var st = wStyle(row);
+      return { key: row.id, kind: 'rows', rows: [row], h: WG.title + WG.after + WG[st].h + (st === 'card' ? WG.labels : 0) };
     });
-    return bands;
   }
   function wWindow(c, n, size, width) {
     var vis = Math.max(1, Math.floor((width - size.w) / size.pitch) + 1);
@@ -1894,7 +1895,8 @@
     else { next._src = src; next.src = src; }
   }
   function wPreload(src) { if (src && W.pre !== src) { W.pre = src; W.preImg = new Image(); W.preImg.src = src; } }
-  function wArtSrc(it) { return Media.image(it.backdrop || it.landscape, 1920); }
+  /* A programme's landscape image may be its channel logo, so games use only real background art. */
+  function wArtSrc(it) { return Media.image(it.kind === 'program' ? it.backdrop : it.backdrop || it.landscape, 1920); }
   function renderWatchRail(zone, live) {
     setHTML(wRailEl, W_RAIL.map(function (u, i) {
       var on = live && zone === 'wrail' && i === clamp(top().f.u, 0, W_RAIL.length - 1);
@@ -1913,7 +1915,7 @@
         + '<div class="wi-act"><span class="wi-hint"><span class="remote-key">OK</span><span>' + esc(mediaVerb(it)) + '</span></span>' + (meta ? '<span class="wi-meta">' + esc(meta) + '</span>' : '') + '</div>';
     } else {
       head = it.tagline || it.title; verb = mediaVerb(it);
-      meta = [REASON_NAMES[it.reason] || '', it.meta || mediaMeta(it)].filter(function (p) { return !!p; }).join(' · ');
+      meta = [REASON_NAMES[it.reason] || '', it.kind === 'program' ? [it.channel, it.airing ? 'On now' : 'Starts ' + timeText(it.start)].join(' · ') : it.meta || mediaMeta(it)].filter(function (p) { return !!p; }).join(' · ');
       html = '<p class="wi-greet">' + esc(greeting()) + '</p><h2 class="wi-head">' + esc(head) + '</h2>'
         + (it.overview ? '<p class="wi-body">' + esc(it.overview) + '</p>' : '')
         + '<div class="wi-act"><span class="wi-btn' + (live && zone === 'whero' ? ' is-focus' : '') + '" role="button" data-z="whero" data-i="0" data-action="watch.featured.' + esc(it.id) + '" aria-label="' + esc(verb + ' ' + it.title) + '">' + esc(verb) + '</span>'

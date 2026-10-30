@@ -56,7 +56,9 @@ const FEATURED = [
   { Id: 'movie:880', Kind: 'discover', Title: 'The Long Walk', Overview: 'Teenage boys compete in an annual walking contest with deadly rules.', BackdropUrl: 'https://image.tmdb.org/t/p/w1280/b.jpg',
     Meta: '2025 · Movie · Thriller · 1h 48m', FeatureReason: 'trending', TmdbId: 880, MediaType: 'movie', RequestStatus: 'none', DefaultAction: 'request' },
   { Id: 'f3', Kind: 'series', Title: 'Severance', Tagline: 'Work is a mystery', Overview: 'Office workers have their memories surgically divided between work and personal lives.', LogoUrl: '/emby/Items/f3/Images/Logo?tag=2',
-    BackdropUrl: '/emby/Items/f3/Images/Backdrop?tag=3', Meta: 'S2 E4 · TV-MA · Drama', FeatureReason: 'new', PlayItemId: '305', DefaultAction: 'play' }
+    BackdropUrl: '/emby/Items/f3/Images/Backdrop?tag=3', Meta: 'S2 E4 · TV-MA · Drama', FeatureReason: 'new', PlayItemId: '305', DefaultAction: 'play' },
+  { Id: 'g1', Kind: 'program', Title: 'NHL Hockey', Subtitle: 'Maple Leafs at Bruins', Tagline: 'Maple Leafs at Bruins', ChannelName: 'Sportsnet', FeatureReason: 'game',
+    PlayItemId: '903', DefaultAction: 'play', StartDate: began, EndDate: ends, IsAiring: true, LandscapeUrl: '/emby/Items/ch1/Images/Primary?tag=c' }
 ];
 function freshApi(over = {}) {
   return {
@@ -480,8 +482,8 @@ async function main() {
       const rect = sel => current.locator(sel).first().evaluate(el => { const r = el.getBoundingClientRect(); return { x: r.left, y: r.top, r: r.right, b: r.bottom }; });
       check('Watch is in use', s.media.layout === 'watch' && await current.locator('#watch').evaluate(el => getComputedStyle(el).display) === 'block');
       check('the Dock and rows of the other layouts are hidden', await current.locator('#dock').evaluate(el => getComputedStyle(el).display) === 'none');
-      check('featured titles in server order', s.media.featured.join() === 'f1,movie:880,f3', s.media.featured);
-      check('paired rows share a band; Trending sits left of Your Teams', s.media.bands.join() === 'continue+nextup,livenow,seerr-trending+sports,seerr-movies', s.media.bands);
+      check('featured titles in server order', s.media.featured.join() === 'f1,movie:880,f3,g1', s.media.featured);
+      check('one row per band; Continue Watching and Next Up merge, Your Teams stands alone', s.media.bands.join() === 'continue,livenow,sports,seerr-trending,seerr-movies', s.media.bands);
       const dock = await rect('#wDock');
       check('the apps dock shows at the bottom from the start', (await current.locator('#wDock .wapp').count()) === 9 && dock.b <= 1080 && dock.y >= 900, dock);
       check('Home starts on the featured title', (await where()).focusAction === 'watch.featured.f1', await where());
@@ -490,7 +492,7 @@ async function main() {
       check('reason and details beside the button', (await current.locator('.wi-meta').textContent()) === 'Continue watching · 2016 · PG-13 · 1h 10m left');
       check('the title shows as art when there is no logo', (await current.locator('.wa-title').textContent()) === 'Arrival');
       check('date and time at the top', /^[A-Z][a-z]{2}, [A-Z][a-z]{2} \d{1,2}\d{1,2}:\d{2} [AP]M$/.test(await current.locator('#wTop').textContent()), await current.locator('#wTop').textContent());
-      check('three dots, the first current', (await current.locator('.wd').count()) === 3 && (await current.locator('.wd.is-on').count()) === 1);
+      check('four dots, the first current', (await current.locator('.wd').count()) === 4 && (await current.locator('.wd.is-on').count()) === 1);
       await until(() => document.querySelector('.w-backdrop.is-on'));
       await current.waitForTimeout(450); await shot('watch-home');
       await nav('right');
@@ -499,6 +501,10 @@ async function main() {
       check('a Seerr title offers Request', (await current.locator('.wi-btn').textContent()) === 'Request');
       await nav('right');
       check('a logo replaces the title art', await current.locator('.wa-logo').count() === 1 && await current.locator('.wa-title').count() === 0);
+      await nav('right');
+      check('a game leads with its matchup', (await current.locator('.wi-head').textContent()) === 'Maple Leafs at Bruins' && (await current.locator('.wi-btn').textContent()) === 'Watch live');
+      check('the game names the team reason, channel and time', (await current.locator('.wi-meta').textContent()) === 'Your team · Sportsnet · On now', await current.locator('.wi-meta').textContent());
+      check('a game without artwork shows no backdrop', await current.locator('.w-backdrop.is-on').count() === 0);
       await nav('right');
       check('Right from the last title wraps to the first', (await state()).media.featuredIndex === 0);
       await nav('left');
@@ -519,14 +525,15 @@ async function main() {
       check('Down enters the first band', (await where()).focusAction === 'media.continue.101');
       check('the top describes the focused title', (await current.locator('.wi-head').textContent()) === 'Arrival' && await current.locator('.wi-head.is-title').count() === 1);
       check('a library card carries its title and detail', (await current.locator('.wc.is-focus .wc-title').textContent()) === 'Arrival');
-      const cw = await rect('.wrow-card:has(.wc[data-action^="media.continue."])'), nu = await rect('.wrow-card:has(.wc[data-action^="media.nextup."])');
-      check('Next Up sits beside Continue Watching', Math.abs(cw.y - nu.y) < 1 && nu.x - cw.x === 912, { cw, nu });
+      check('the merged row is titled Continue Watching', (await current.locator('.wrow.is-active .wr-title').textContent()) === 'Continue Watching');
       await nav('right', 'right', 'right');
-      check('Right past the last card moves to the row beside it', (await where()).focusAction === 'media.nextup.200', await where());
+      check('next episodes follow the titles in progress in the same row', (await where()).focusAction === 'media.continue.200', await where());
       await nav('left');
-      check('Left from its first card returns', (await where()).focusAction === 'media.continue.103');
+      check('Left steps back along the row', (await where()).focusAction === 'media.continue.103');
       await nav('down', 'down');
-      check('Down keeps to the left side of a band', (await where()).focusAction === 'media.seerr-trending.movie:500', await where());
+      check('Your Teams has its own row', (await where()).focusAction === 'media.sports.p2', await where());
+      await nav('down');
+      check('Trending follows', (await where()).focusAction === 'media.seerr-trending.movie:500', await where());
       check('Seerr tiles carry no labels', await current.locator('.wc.is-focus .wc-label').count() === 0);
       await current.waitForTimeout(450); await shot('watch-rows');
       await nav('down', 'down');
