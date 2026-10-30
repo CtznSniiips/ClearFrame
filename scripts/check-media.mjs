@@ -553,8 +553,9 @@ async function main() {
       check('featured titles change on their own', true);
       await nav('down');
       const at = (await state()).media.featuredIndex;
-      await current.waitForTimeout(700);
-      check('they stay put while a row has focus', (await state()).media.featuredIndex === at);
+      await until(n => ShoreQA.state().media.featuredIndex !== n, at);
+      check('they keep changing behind a focused card', (await state()).media.featuredIndex !== at);
+      check('while the top keeps describing the card', (await current.locator('.wi-head').textContent()) === 'Arrival' && (await where()).focusAction === 'media.continue.101');
       await current.close(); current = null;
 
       api = freshApi({ featured: undefined }); await page({ paired: true, look: 'watch' });
@@ -577,6 +578,32 @@ async function main() {
       check('an unpaired TV uses Dock', (await state()).media.layout === 'dock' && await current.locator('#watch').evaluate(el => getComputedStyle(el).display) === 'none');
       await scene('appearance');
       check('Layout offers Watch', (await current.evaluate(() => ShoreQA.actions())).length > 0);
+    });
+
+    await run('Watch layout follows Background', async () => {
+      api = freshApi(); await page({ paired: true, look: 'watch' });
+      const bgOf = sel => current.locator(sel).evaluate(el => getComputedStyle(el).backgroundColor);
+      await current.evaluate(() => ShoreQA.look({ bg: 'dark' }));
+      await until(() => ShoreQA.ready());
+      check('Dark: a dark page', await bgOf('#watch') === 'rgb(11, 13, 17)');
+      await current.waitForTimeout(400); await shot('watch-dark');
+      check('only the focused card shows its name', await current.locator('.wc .wc-label').evaluateAll(els => els.filter(e => getComputedStyle(e).opacity !== '0').length) === 0);
+      await nav('down');
+      await current.waitForTimeout(300);
+      check('the focused card names itself', await current.locator('.wc.is-focus .wc-label').evaluate(e => getComputedStyle(e).opacity) === '1');
+      check('the focus ring is a light outline', /0px 0px 0px 2px/.test(await current.locator('.wc.is-focus .mc-art').evaluate(e => getComputedStyle(e).boxShadow)));
+      await nav('up');
+      await current.evaluate(() => ShoreQA.look({ bg: 'light' }));
+      await until(() => ShoreQA.ready());
+      await current.waitForTimeout(300);
+      check('Light: a light page with dark text', await bgOf('#watch') === 'rgb(238, 234, 226)' && await current.locator('.wi-head').evaluate(e => getComputedStyle(e).color) === 'rgb(28, 26, 23)');
+      await shot('watch-light');
+      await current.evaluate(() => ShoreQA.look({ bg: 'photo' }));
+      await until(() => ShoreQA.ready());
+      await current.waitForTimeout(500);
+      check('Photo: the wallpaper shows behind Watch', await bgOf('#watch') === 'rgba(0, 0, 0, 0)' && await current.locator('#photo').evaluate(e => getComputedStyle(e).display !== 'none' && getComputedStyle(e.parentNode).display !== 'none'));
+      check('Photo: the Dock layout’s shading stays hidden', await current.locator('#bg .scrim').evaluate(e => getComputedStyle(e).display) === 'none');
+      await shot('watch-photo');
     });
 
     await run('Cached rows show at once and refresh on return', async () => {

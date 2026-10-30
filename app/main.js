@@ -1873,11 +1873,12 @@
     else return;
     watchKey(t, 'ok');
   }
-  /* Featured titles change every few seconds while the top area has focus and nothing else is open. */
+  /* Featured titles change every few seconds while Home is in view, wherever focus is; while a card has
+     focus only the background changes, and the top keeps describing the card. */
   function syncWatch() {
     var t = top();
     clearTimeout(W.timer); W.timer = 0;
-    if (document.hidden || layoutNow() !== 'watch' || t.id !== 'home' || M.featured.length < 2 || (t.f.zone !== 'whero' && t.f.zone !== 'wrail')) return;
+    if (document.hidden || layoutNow() !== 'watch' || t.id !== 'home' || M.featured.length < 2) return;
     W.timer = setTimeout(function () { W.timer = 0; wShow((W.i + 1) % M.featured.length); render(); syncWatch(); }, QA.featureMs);
   }
   function wBackdrop(src) {
