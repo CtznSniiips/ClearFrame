@@ -1,7 +1,7 @@
 // ClearFrame rows, pairing, requests and per-TV settings. The Emby plugin's TV API is mocked at
 // the network boundary (including CORS preflights); the public Tizen API is mocked as in
 // check-browser.mjs. No Emby server, Seerr or TV is contacted.
-import { mkdirSync, writeFileSync } from 'node:fs';
+import { mkdirSync, readFileSync, writeFileSync } from 'node:fs';
 import { openPreview, root } from './browser.mjs';
 
 const SERVER = 'http://cf.test:8096', TOKEN = 'tok_0123456789abcdefghijklmnop', EMBY_APP = 'vYmY3ACVaa.emby';
@@ -50,11 +50,19 @@ const ITEMS = {
   'seerr-movies': [{ Id: 'movie:603', Kind: 'discover', Title: 'The Matrix', Year: 1999, TmdbId: 603, MediaType: 'movie', RequestStatus: 'none', PosterUrl: 'https://image.tmdb.org/t/p/w342/m.jpg', DefaultAction: 'request' }],
   'seerr-tv': []
 };
+const FEATURED = [
+  { Id: 'f1', Kind: 'movie', Title: 'Arrival', Tagline: 'Why are they here?', Overview: 'A linguist works with the military to communicate with alien lifeforms after twelve mysterious spacecraft appear around the world.',
+    BackdropUrl: '/emby/Items/f1/Images/Backdrop?tag=1', Meta: '2016 · PG-13 · 1h 10m left', FeatureReason: 'resume', PlayItemId: '101', DefaultAction: 'resume', ProgressPercent: 42 },
+  { Id: 'movie:880', Kind: 'discover', Title: 'The Long Walk', Overview: 'Teenage boys compete in an annual walking contest with deadly rules.', BackdropUrl: 'https://image.tmdb.org/t/p/w1280/b.jpg',
+    Meta: '2025 · Movie · Thriller · 1h 48m', FeatureReason: 'trending', TmdbId: 880, MediaType: 'movie', RequestStatus: 'none', DefaultAction: 'request' },
+  { Id: 'f3', Kind: 'series', Title: 'Severance', Tagline: 'Work is a mystery', Overview: 'Office workers have their memories surgically divided between work and personal lives.', LogoUrl: '/emby/Items/f3/Images/Logo?tag=2',
+    BackdropUrl: '/emby/Items/f3/Images/Backdrop?tag=3', Meta: 'S2 E4 · TV-MA · Drama', FeatureReason: 'new', PlayItemId: '305', DefaultAction: 'play' }
+];
 function freshApi(over = {}) {
   return {
     order: ROWS.map(r => r.Id), hidden: [], teams: ['Toronto Maple Leafs'], limit: 20, look: 12, delay: 1500, wait: 45, customized: false,
     approveAfter: 2, statusCalls: 0, pairs: [], plays: [], requests: [], saves: [], calls: [], unauthorized: false, unreachable: false, noPlugin: false,
-    playStatus: 'queued', requesters: [{ Id: 1, Name: 'Steve' }, { Id: 2, Name: 'Jess' }], lastRequester: 2, requestStatus: 2, requestsEnabled: true,
+    featured: FEATURED, playStatus: 'queued', requesters: [{ Id: 1, Name: 'Steve' }, { Id: 2, Name: 'Jess' }], lastRequester: 2, requestStatus: 2, requestsEnabled: true,
     teamsList: [
       { Name: 'Toronto Maple Leafs', League: 'NHL Hockey', Games: 2, NextStartDate: soon, Selected: true },
       { Name: 'Boston Bruins', League: 'NHL Hockey', Games: 1, NextStartDate: soon, Selected: false },
@@ -72,7 +80,7 @@ function settingsJson() {
 }
 function homeJson() {
   return {
-    TvName: 'Living Room', UserName: 'steve', RequestsEnabled: api.requestsEnabled, Warnings: [],
+    TvName: 'Living Room', UserName: 'steve', RequestsEnabled: api.requestsEnabled, Warnings: [], Featured: api.featured,
     Rows: api.order.filter(id => !api.hidden.includes(id) && ITEMS[id].length).map(id => ({ Id: id, Title: ROWS.find(r => r.Id === id).Title, Layout: id.startsWith('seerr') ? 'poster' : 'landscape', Items: ITEMS[id].slice(0, api.limit) }))
   };
 }
@@ -85,6 +93,9 @@ async function handle(route) {
   const req = route.request(), url = new URL(req.url()), path = url.pathname, method = req.method();
   const json = (status, body) => route.fulfill({ status, headers: { ...CORS, 'Content-Type': 'application/json' }, body: JSON.stringify(body) });
   if (method === 'OPTIONS') return route.fulfill({ status: 204, headers: CORS, body: '' });
+  // Featured backdrops borrow the bundled photographs, so screenshots show how text sits over a real image.
+  if (path.includes('/Images/Backdrop')) return route.fulfill({ status: 200, headers: { ...CORS, 'Content-Type': 'image/jpeg' }, body: readFileSync(root + 'app/assets/wallpapers/' + (path.includes('/f3/') ? 'bridge' : 'alpine') + '.jpg') });
+  if (path.includes('/Images/Logo')) return route.fulfill({ status: 200, headers: { ...CORS, 'Content-Type': 'image/svg+xml' }, body: '<svg xmlns="http://www.w3.org/2000/svg" width="480" height="140"><text x="100%" y="110" fill="#fff" font-family="serif" font-size="112" text-anchor="end" letter-spacing="8">LOGO</text></svg>' });
   if (path.startsWith('/emby/Items/')) return route.fulfill({ status: 200, headers: { ...CORS, 'Content-Type': 'image/svg+xml' }, body: art(path.split('/')[3], 320, 180) });
   if (api.unreachable) return route.abort('connectionrefused');
   const body = req.postData() ? JSON.parse(req.postData()) : null, auth = req.headers().authorization || '';
@@ -124,14 +135,14 @@ async function handle(route) {
 }
 
 /* ---------- Page harness ---------- */
-function installHarness({ paired, cacheHome, staleMs }) {
+function installHarness({ paired, cacheHome, staleMs, look, featureMs }) {
   if (!sessionStorage.getItem('__seeded')) {
-    localStorage.setItem('cleanframe.home.v1', JSON.stringify({ dock: ['stremio', 'netflix', 'disneyplus', 'youtube', 'appletv', 'primevideo', 'abciview', 'sbs', 'applemusic'], wallpaper: 'misty', mode: 'fixed', lastApp: 'netflix', theme: 'shore' }));
+    localStorage.setItem('cleanframe.home.v1', JSON.stringify({ dock: ['stremio', 'netflix', 'disneyplus', 'youtube', 'appletv', 'primevideo', 'abciview', 'sbs', 'applemusic'], wallpaper: 'misty', mode: 'fixed', lastApp: 'netflix', theme: 'shore', ...(look ? { look: { layout: look } } : {}) }));
     if (paired) localStorage.setItem('clearframe.server.v1', JSON.stringify({ url: 'http://cf.test:8096', token: 'tok_0123456789abcdefghijklmnop', tvName: 'Living Room' }));
     if (cacheHome) localStorage.setItem('clearframe.home.cache.v1', JSON.stringify({ at: 1, data: cacheHome }));
     sessionStorage.setItem('__seeded', '1');
   }
-  window.ShoreQA = { minuteMs: 60000, pollMs: 40, staleMs: staleMs || 30000 };
+  window.ShoreQA = { minuteMs: 60000, pollMs: 40, staleMs: staleMs || 30000, featureMs: featureMs || 600000 };
   window.__tv = { calls: [], launchFailure: false };
   window.tizen = {
     ApplicationControlData: function (key, value) { this.key = key; this.value = value; },
@@ -155,7 +166,9 @@ async function page(options = {}) {
   });
   await current.route(SERVER + '/**', handle);
   await current.route('https://image.tmdb.org/**', route => route.fulfill({ status: 200, headers: { 'Content-Type': 'image/svg+xml', 'Access-Control-Allow-Origin': '*' }, body: art('Poster', 200, 300) }));
-  await current.addInitScript(installHarness, { paired: !!options.paired, cacheHome: options.cacheHome || null, staleMs: options.staleMs || 0 });
+  // Registered last, so it is matched first.
+  await current.route('https://image.tmdb.org/t/p/w1280/**', route => route.fulfill({ status: 200, headers: { 'Content-Type': 'image/jpeg', 'Access-Control-Allow-Origin': '*' }, body: readFileSync(root + 'app/assets/wallpapers/amber.jpg') }));
+  await current.addInitScript(installHarness, { paired: !!options.paired, cacheHome: options.cacheHome || null, staleMs: options.staleMs || 0, look: options.look || null, featureMs: options.featureMs || 0 });
   await current.goto(preview.baseURL + '/home/');
   await current.waitForFunction(() => window.ShoreQA && ShoreQA.ready && ShoreQA.ready());
   if (options.paired && options.waitRows !== false) await current.waitForFunction(() => ShoreQA.state().media.rows.length > 0 && !ShoreQA.state().media.loading);
@@ -227,6 +240,7 @@ async function main() {
       const saved = await current.evaluate(() => JSON.parse(localStorage.getItem('clearframe.server.v1')));
       check('token saved for the server', saved.url === SERVER && saved.token === TOKEN && saved.tvName === 'Living Room', saved);
       check('token never shown on screen', !(await current.locator('body').textContent()).includes(TOKEN));
+      check('a newly paired TV switches Home to Watch', (await state()).layout === 'watch');
       await nav('ok');
       await until(() => ShoreQA.state().view === 'mediaset' && !!ShoreQA.state().media.settings);
       await nav('back', 'back');
@@ -458,6 +472,94 @@ async function main() {
       check('Settings says to connect again', (await current.locator('[data-action="settings.group.media"]').textContent()).includes('Connect again'));
       await act('settings.group.media');
       check('opens Connect with the old address', (await state()).view === 'connect' && (await current.locator('.cn-field').textContent()).trim() === 'cf.test:8096');
+    });
+
+    await run('Watch layout: featured titles, bands and navigation', async () => {
+      api = freshApi(); await page({ paired: true, look: 'watch' });
+      let s = await state();
+      const rect = sel => current.locator(sel).first().evaluate(el => { const r = el.getBoundingClientRect(); return { x: r.left, y: r.top, r: r.right, b: r.bottom }; });
+      check('Watch is in use', s.media.layout === 'watch' && await current.locator('#watch').evaluate(el => getComputedStyle(el).display) === 'block');
+      check('the Dock and rows of the other layouts are hidden', await current.locator('#dock').evaluate(el => getComputedStyle(el).display) === 'none');
+      check('featured titles in server order', s.media.featured.join() === 'f1,movie:880,f3', s.media.featured);
+      check('paired rows share a band; Trending sits left of Your Teams', s.media.bands.join() === 'continue+nextup,livenow,seerr-trending+sports,seerr-movies,apps', s.media.bands);
+      check('Home starts on the featured title', (await where()).focusAction === 'watch.featured.f1', await where());
+      check('the tagline heads the featured title', (await current.locator('.wi-head').textContent()) === 'Why are they here?');
+      check('the button names the action', (await current.locator('.wi-btn').textContent()) === 'Resume');
+      check('reason and details beside the button', (await current.locator('.wi-meta').textContent()) === 'Continue watching · 2016 · PG-13 · 1h 10m left');
+      check('the title shows as art when there is no logo', (await current.locator('.wa-title').textContent()) === 'Arrival');
+      check('date and time at the top', /^[A-Z][a-z]{2}, [A-Z][a-z]{2} \d{1,2}\d{1,2}:\d{2} [AP]M$/.test(await current.locator('#wTop').textContent()), await current.locator('#wTop').textContent());
+      check('three dots, the first current', (await current.locator('.wd').count()) === 3 && (await current.locator('.wd.is-on').count()) === 1);
+      await until(() => document.querySelector('.w-backdrop.is-on'));
+      await current.waitForTimeout(450); await shot('watch-home');
+      await nav('right');
+      s = await state();
+      check('Right shows the next featured title', s.media.featuredIndex === 1 && (await current.locator('.wi-head').textContent()) === 'The Long Walk');
+      check('a Seerr title offers Request', (await current.locator('.wi-btn').textContent()) === 'Request');
+      await nav('right');
+      check('a logo replaces the title art', await current.locator('.wa-logo').count() === 1 && await current.locator('.wa-title').count() === 0);
+      await nav('right');
+      check('Right from the last title wraps to the first', (await state()).media.featuredIndex === 0);
+      await nav('left');
+      check('Left from the first title reaches the rail', (await where()).focusAction === 'util.art');
+      check('the rail names the focused control', await current.locator('.wr-btn.is-focus .wr-label').evaluate(el => getComputedStyle(el).opacity) !== '0');
+      await nav('down', 'down');
+      check('the rail holds Art Mode, All apps and Settings', (await where()).focusAction === 'util.settings');
+      await nav('ok');
+      check('Settings opens from the rail', (await state()).view === 'settings');
+      await nav('back');
+      await nav('right');
+      check('Right from the rail returns to the featured title', (await where()).zone === 'whero');
+      await nav('down');
+      check('Down enters the first band', (await where()).focusAction === 'media.continue.101');
+      check('the top describes the focused title', (await current.locator('.wi-head').textContent()) === 'Arrival' && await current.locator('.wi-head.is-title').count() === 1);
+      check('a library card carries its title and detail', (await current.locator('.wc.is-focus .wc-title').textContent()) === 'Arrival');
+      const cw = await rect('.wrow-card:has(.wc[data-action^="media.continue."])'), nu = await rect('.wrow-card:has(.wc[data-action^="media.nextup."])');
+      check('Next Up sits beside Continue Watching', Math.abs(cw.y - nu.y) < 1 && nu.x - cw.x === 912, { cw, nu });
+      await nav('right', 'right', 'right');
+      check('Right past the last card moves to the row beside it', (await where()).focusAction === 'media.nextup.200', await where());
+      await nav('left');
+      check('Left from its first card returns', (await where()).focusAction === 'media.continue.103');
+      await nav('down', 'down');
+      check('Down keeps to the left side of a band', (await where()).focusAction === 'media.seerr-trending.movie:500', await where());
+      check('Seerr tiles carry no labels', await current.locator('.wc.is-focus .wc-label').count() === 0);
+      await current.waitForTimeout(450); await shot('watch-rows');
+      await nav('down', 'down');
+      check('the Home apps come last', (await where()).focusAction === 'home.app.stremio', await where());
+      await current.waitForTimeout(400);
+      const app = await rect('.wapp.is-focus');
+      check('the focused band scrolls into view', app.b <= 1080 && app.y >= 0, app);
+      await current.waitForTimeout(450); await shot('watch-apps');
+      await nav('right', 'ok');
+      await current.waitForTimeout(80);
+      check('OK on an app launches it', (await current.evaluate(() => window.__tv.calls)).some(c => c.id === 'org.tizen.netflix-app'));
+      await current.evaluate(() => { Object.defineProperty(document, 'hidden', { configurable: true, get: () => false }); document.dispatchEvent(new Event('visibilitychange')); });
+      await nav('back');
+      check('Back returns to the featured title', (await where()).zone === 'whero');
+      await nav('ok');
+      await untilNode(() => api.plays.length === 1);
+      check('OK on the featured title resumes it', api.plays[0].ItemId === '101' && api.plays[0].Action === 'resume', api.plays);
+    });
+
+    await run('Watch layout: rotation, fallback and missing titles', async () => {
+      api = freshApi(); await page({ paired: true, look: 'watch', featureMs: 300 });
+      await until(() => ShoreQA.state().media.featuredIndex === 1);
+      check('featured titles change on their own', true);
+      await nav('down');
+      const at = (await state()).media.featuredIndex;
+      await current.waitForTimeout(700);
+      check('they stay put while a row has focus', (await state()).media.featuredIndex === at);
+      await current.close(); current = null;
+
+      api = freshApi({ featured: [] }); await page({ paired: true, look: 'watch' });
+      check('without featured titles Home starts in the first band', (await where()).focusAction === 'media.continue.101', await where());
+      await nav('up');
+      check('Up from the first band reaches the rail', (await where()).zone === 'wrail');
+      await current.close(); current = null;
+
+      api = freshApi(); await page({ look: 'watch' });
+      check('an unpaired TV uses Dock', (await state()).media.layout === 'dock' && await current.locator('#watch').evaluate(el => getComputedStyle(el).display) === 'none');
+      await scene('appearance');
+      check('Layout offers Watch', (await current.evaluate(() => ShoreQA.actions())).length > 0);
     });
 
     await run('Cached rows show at once and refresh on return', async () => {

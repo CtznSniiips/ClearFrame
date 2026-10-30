@@ -381,8 +381,9 @@ namespace ClearFrame.Services
                 DtoOptions = options,
             });
 
-            var fromResume = _dto.GetBaseItemDtos(resume, options, user).Select(d => MapFeaturedLibrary(user, d, "resume")).ToList();
-            var fromLatest = _dto.GetBaseItemDtos(latest, options, user).Select(d => MapFeaturedLibrary(user, d, "new")).ToList();
+            // The featured area needs background art; a title without it stays in its row instead.
+            var fromResume = _dto.GetBaseItemDtos(resume, options, user).Select(d => MapFeaturedLibrary(user, d, "resume")).Where(i => i.BackdropUrl != null).ToList();
+            var fromLatest = _dto.GetBaseItemDtos(latest, options, user).Select(d => MapFeaturedLibrary(user, d, "new")).Where(i => i.BackdropUrl != null).ToList();
 
             var fromTrending = new List<HomeItem>();
             var trending = trendingTask == null ? null : await trendingTask.ConfigureAwait(false);
@@ -499,7 +500,6 @@ namespace ClearFrame.Services
                 parts.Add(left.HasValue ? Duration(left.Value) + " left" : (d.RunTimeTicks > 0 ? Duration(d.RunTimeTicks.Value) : null));
             }
 
-            item.BackdropUrl = item.BackdropUrl ?? item.LandscapeUrl;
             item.Meta = string.Join(" · ", parts.Where(p => !string.IsNullOrWhiteSpace(p)));
             item.FeatureReason = reason;
             return item;

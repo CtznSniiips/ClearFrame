@@ -7,6 +7,8 @@
 - Playback uses each TV's own delay and wait time.
 - Seerr titles that Seerr reports as available or partly available are matched to the Emby library by TMDB id. Movies play or resume and shows play their next episode (`PlayItemId`, `PlayAction`). Available titles default to playing; partly available ones still default to requesting.
 - Each title appears only once across a TV's rows, in the first row that has it (episodes count as their show).
+- `Featured`: up to five titles for the top of Home, mixing the title watched most recently, the newest unwatched library additions and the top of Seerr's Trending list. Each carries a tagline, backdrop, logo (when the library has one), a details line and the reason it was picked. Featured titles aren't repeated in the rows.
+- Your Teams only lists games: a guide listing must be a matchup ("A at B", "A vs B", "League: A v B") naming a chosen team in its title or episode title. Descriptions are no longer searched, so preview shows, highlights and talk shows that mention a team are left out, and so are replays of old games. A chosen name matches the same name or the same name with a place in front ("Maple Leafs" matches "Toronto Maple Leafs"; "Michigan" doesn't match "Michigan State").
 - TVs can send their token as `Authorization: ClearFrame <token>`. Emby's CORS policy already allows that header, so browser-based clients pass the preflight. `X-ClearFrame-Token` still works.
 - The plugin page's home and playback settings are now the defaults for TVs. Each TV card shows whether the TV has changed its settings and can reset it. Every setting has a short explanation, and the Seerr section has its own Save button.
 

@@ -1,4 +1,4 @@
-# Interaction behaviour — 0.7.1
+# Interaction behaviour — 0.8.0
 
 ## Home
 
@@ -88,6 +88,15 @@ Nothing changes until the TV is paired with the ClearFrame Emby plugin. An unpai
 - OK on a library item or Live TV programme asks the server to play, resume (from the saved position) or tune that channel, then opens the Emby app. The server delivers the command when Emby connects. A server refusal or a missing Emby app shows a message, and Emby is not opened after a refusal.
 - OK on a Seerr title that is already in the Emby library plays it like a library item: a movie resumes or plays, a show plays its next episode. A partly available title opens its request screen with Play first (focused), then Request. Other Seerr titles open the request screen: with one linked Seerr account, a single Request button; with several, one button per person, with the last requester focused. Requested and processing titles, and available titles the server couldn't find in the library, only explain their status. A Seerr refusal is shown with Try again.
 - Each title appears once on Home, in the first row (in this TV's order) that has it. A show counts as one title, so its episode in Next Up keeps it out of Trending.
+
+**Watch layout.** Settings → Layout → Watch. A newly paired TV switches to it. Until the TV is paired and the server has something to show, Watch looks and behaves like Dock, and the Layout page says why.
+
+- Top: a rail on the left (Art Mode, All apps, Settings), the date and time on the right, and a featured title over its backdrop: a greeting, the title's tagline as the headline (its name when it has none), two lines of overview, a button named for the action (Resume, Play, Request, Watch live) with the reason and details beside it, and the title's logo, or its name, on the right. Dots show which of up to five featured titles is in view.
+- The featured mix comes from the server: the title being watched most recently, the newest library additions not yet watched, and the top of Seerr's Trending list, alternating. Titles without background art are left out. Featured titles don't appear again in the rows.
+- Home starts on the featured button. Left and Right step through the featured titles (Right wraps); Left from the first one reaches the rail. Featured titles change every nine seconds while the button or rail has focus. Up and Down move along the rail; Right or Back leaves it.
+- Below are bands of rows. Continue Watching sits beside Next Up, and Trending beside Your Teams, when both have titles; otherwise a row takes the full width. Library and Live TV cards carry a title and detail line; Seerr rows are artwork tiles. The Home apps come last.
+- Left/Right move along a row; Right from a row's last card moves to the row beside it, and Left from its first card back. Left from the first card of a band reaches the rail. Up and Down move between bands, keeping to the same side where they can; Up from the first band returns to the featured title. Back from any band returns to the featured title; Back there asks to leave Home.
+- While a card has focus, the top describes it: name, overview, OK action and details. A band that doesn't fit below the featured area moves up under a compact title; the bands above it and the rail fade out.
 
 Rows are cached so Home shows the last rows at once, then refreshed on start, when Home becomes visible again after 30 seconds away, and every five minutes while Home is visible. If the server no longer knows this TV, the rows disappear and Settings says to connect again, pre-filling the old address.
 

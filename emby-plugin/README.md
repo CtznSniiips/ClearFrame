@@ -52,7 +52,9 @@ Every TV call except pairing sends `Authorization: ClearFrame <token>`. `X-Clear
 
 **Row ids:** `continue`, `nextup`, `livenow`, `sports`, `seerr-trending`, `seerr-movies` and `seerr-tv`. `Settings.Rows` lists every row in the TV's order, so the TV can render its settings list straight from it. `Available: false` means the row can't show anything yet: Seerr isn't set up, or no teams are chosen. `Ranges` gives the min, max and server default for each number, for building sliders or steppers.
 
-**Team picker:** `/Sports/Teams` reads team names out of guide listings such as *NHL Hockey: Toronto Maple Leafs at Boston Bruins* or *Premier League: Arsenal v Chelsea*. Saved teams are listed first. To save the chosen names, send them as `SportsTeams` to `/Settings`. A team matches a programme when its name appears in the title, episode title or description.
+**Team picker:** `/Sports/Teams` reads team names out of guide listings such as *NHL Hockey: Toronto Maple Leafs at Boston Bruins* or *Premier League: Arsenal v Chelsea*. Saved teams are listed first. To save the chosen names, send them as `SportsTeams` to `/Settings`.
+
+**Your Teams** lists sports programmes in the look-ahead window whose title or episode title is a matchup naming a chosen team. Descriptions aren't searched, and replays (listings marked as repeats that aren't live) are left out. A chosen name matches a team in the listing when it's the same name, or the same name with words in front: "Maple Leafs" matches "Toronto Maple Leafs", but "Michigan" doesn't match "Michigan State". The same game on several channels is listed once.
 
 Home items carry what the TV needs to act on them:
 
@@ -62,7 +64,9 @@ Home items carry what the TV needs to act on them:
 - For Live TV: `ChannelName`, `StartDate`, `EndDate` and `IsAiring`.
 - For Seerr items: `TmdbId`, `MediaType` and `RequestStatus` (`none`, `requested`, `processing`, `partial` or `available`). When an available or partly available title is in the Emby library, `PlayItemId` and `PlayAction` (`play` or `resume`) play it: a movie directly, a show at its next episode.
 
-A title appears only once across the rows, in the first row (in the TV's order) that has it. Episodes count as their show, and Seerr titles count as the library item they match.
+`Home.Featured` lists up to five titles for the large area at the top of Home: the title watched most recently, the newest library additions not yet watched, and the top of Seerr's Trending list, alternating. Each is a Home item with `Tagline`, `BackdropUrl`, `LogoUrl` (when the library has a logo), `Meta` (e.g. `2024 · PG-13 · 2h 10m` or `S2 E4 · TV-MA · Drama`) and `FeatureReason` (`resume`, `new` or `trending`). Seerr taglines come from Seerr's title details and are cached for 12 hours. Library titles without a backdrop aren't featured.
+
+A title appears only once across the featured titles and rows, in the first row (in the TV's order) that has it. Episodes count as their show, and Seerr titles count as the library item they match.
 
 **Playing from the TV:** call `/ClearFrame/Play` first, then launch the Emby app (`vYmY3ACVaa.emby`). If Emby is already running the command is sent immediately. Otherwise it's queued until the app connects, for up to the TV's `PlayTimeoutSeconds`. It's sent `PlayDelayMs` after the app connects, so the app has time to finish loading.
 
