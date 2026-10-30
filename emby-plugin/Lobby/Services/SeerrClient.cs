@@ -9,7 +9,7 @@ using System.Threading.Tasks;
 using MediaBrowser.Model.Logging;
 using MediaBrowser.Model.Serialization;
 
-namespace ClearFrame.Services
+namespace Lobby.Services
 {
     public class SeerrUser
     {
@@ -109,7 +109,7 @@ namespace ClearFrame.Services
         public int StatusCode { get; }
     }
 
-    /// <summary>Thin client for the parts of the Seerr API that ClearFrame uses.</summary>
+    /// <summary>Thin client for the parts of the Seerr API that Lobby uses.</summary>
     public class SeerrClient
     {
         private static readonly HttpClient Http = new HttpClient { Timeout = TimeSpan.FromSeconds(15) };
@@ -248,7 +248,7 @@ namespace ClearFrame.Services
             apiKey = (apiKey ?? c.SeerrApiKey ?? string.Empty).Trim();
             if (baseUrl.Length == 0 || apiKey.Length == 0)
             {
-                throw new SeerrException("Seerr is not configured in the ClearFrame plugin settings.");
+                throw new SeerrException("Seerr is not configured in the Lobby plugin settings.");
             }
 
             using (var req = new HttpRequestMessage(method, baseUrl + path))

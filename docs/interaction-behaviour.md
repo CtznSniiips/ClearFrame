@@ -1,4 +1,4 @@
-# Interaction behaviour — 0.8.3
+# Interaction behaviour — 0.9.0
 
 ## Home
 
@@ -74,11 +74,11 @@ Settings → Background → Rotation offers Fixed, Each time Home opens, Every 5
 
 Launcher wallpaper is separate from native Art Mode. Runtime photos, materials and available fonts are local assets; they do not require the Mac or a network download.
 
-## Emby and Seerr rows (ClearFrame)
+## Emby and Seerr rows (Lobby)
 
-Nothing changes until the TV is paired with the ClearFrame Emby plugin. An unpaired Home makes no network requests and looks exactly as above.
+Nothing changes until the TV is paired with the Lobby Emby plugin. An unpaired Home makes no network requests and looks exactly as above.
 
-**Pairing.** Settings → Emby & Seerr → Connect opens a keypad for the server address. The arrows and OK use the on-screen keys; number keys on the remote (or a keyboard in the preview), `.` and `:` type directly, and Backspace deletes. The port defaults to 8096. Connect checks that an Emby server answers, then shows a four-character code. Approving the code on the plugin's page saves the address and the TV's token in `clearframe.server.v1`, separate from the Home preferences. Failures name the cause (unreachable, not Emby, plugin missing, rejected or expired) and offer Try again or Change address. Back on the code returns to the keypad; Back on the keypad closes Connect.
+**Pairing.** Settings → Emby & Seerr → Connect opens a keypad for the server address. The arrows and OK use the on-screen keys; number keys on the remote (or a keyboard in the preview), `.` and `:` type directly, and Backspace deletes. The port defaults to 8096. Connect checks that an Emby server answers, then shows a four-character code. Approving the code on the plugin's page saves the address and the TV's token in `lobby.server.v1`, separate from the Home preferences. Failures name the cause (unreachable, not Emby, plugin missing, rejected or expired) and offer Try again or Change address. Back on the code returns to the keypad; Back on the keypad closes Connect.
 
 **Rows on Home.** The server's rows (Continue Watching, Next Up, On Now, Your Teams, Trending, Popular Movies, Popular Shows) appear in the order and with the items each TV has chosen. Empty rows are left out.
 

@@ -1,4 +1,4 @@
-using ClearFrame.Services;
+using Lobby.Services;
 using MediaBrowser.Controller.Dto;
 using MediaBrowser.Controller.Library;
 using MediaBrowser.Controller.LiveTv;
@@ -8,14 +8,14 @@ using MediaBrowser.Controller.TV;
 using MediaBrowser.Model.Logging;
 using MediaBrowser.Model.Serialization;
 
-namespace ClearFrame
+namespace Lobby
 {
     /// <summary>
-    /// Server entry point. Creates the long-lived ClearFrame services and exposes them to the REST endpoints.
+    /// Server entry point. Creates the long-lived Lobby services and exposes them to the REST endpoints.
     /// </summary>
-    public class ClearFrameRuntime : IServerEntryPoint
+    public class LobbyRuntime : IServerEntryPoint
     {
-        public ClearFrameRuntime(
+        public LobbyRuntime(
             ISessionManager sessionManager,
             IUserManager userManager,
             ILibraryManager libraryManager,
@@ -26,7 +26,7 @@ namespace ClearFrame
             IJsonSerializer json,
             ILogManager logManager)
         {
-            Logger = logManager.GetLogger("ClearFrame");
+            Logger = logManager.GetLogger("Lobby");
             UserManager = userManager;
             LibraryManager = libraryManager;
             UserDataManager = userDataManager;
@@ -39,7 +39,7 @@ namespace ClearFrame
             Current = this;
         }
 
-        public static ClearFrameRuntime Current { get; private set; }
+        public static LobbyRuntime Current { get; private set; }
 
         public ILogger Logger { get; }
         public IUserManager UserManager { get; }
@@ -59,7 +59,7 @@ namespace ClearFrame
 
         public void Run()
         {
-            Logger.Info("ClearFrame started: {0} paired TV(s), {1} account link(s)",
+            Logger.Info("Lobby started: {0} paired TV(s), {1} account link(s)",
                 Plugin.Instance.Configuration.Tvs.Length, Plugin.Instance.Configuration.UserLinks.Length);
         }
 

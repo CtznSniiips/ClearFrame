@@ -4,11 +4,11 @@ using System.Collections.Generic;
 using System.Linq;
 using System.Security.Cryptography;
 using System.Text;
-using ClearFrame.Configuration;
+using Lobby.Configuration;
 using MediaBrowser.Controller.Net;
 using MediaBrowser.Model.Logging;
 
-namespace ClearFrame.Services
+namespace Lobby.Services
 {
     /// <summary>A pairing started by a TV and waiting for an admin to approve it.</summary>
     public class PendingPairing
@@ -77,7 +77,7 @@ namespace ClearFrame.Services
             };
 
             _pairings[code] = pairing;
-            _logger.Info("ClearFrame pairing {0} started by '{1}'", code, pairing.DeviceName);
+            _logger.Info("Lobby pairing {0} started by '{1}'", code, pairing.DeviceName);
             return pairing;
         }
 
@@ -142,7 +142,7 @@ namespace ClearFrame.Services
             pairing.IssuedToken = token;
             pairing.TvId = tv.Id;
             pairing.TvName = tv.Name;
-            _logger.Info("ClearFrame pairing {0} approved as '{1}'", pairing.Code, tv.Name);
+            _logger.Info("Lobby pairing {0} approved as '{1}'", pairing.Code, tv.Name);
             return tv;
         }
 
@@ -159,14 +159,14 @@ namespace ClearFrame.Services
         {
             if (string.IsNullOrWhiteSpace(token))
             {
-                throw new SecurityException("Missing ClearFrame token (Authorization: ClearFrame <token>).", SecurityExceptionType.Unauthenticated);
+                throw new SecurityException("Missing Lobby token (Authorization: Lobby <token>).", SecurityExceptionType.Unauthenticated);
             }
 
             var hash = Hash(token.Trim());
             var tv = Plugin.Instance.Configuration.Tvs.FirstOrDefault(t => FixedTimeEquals(t.TokenHash, hash));
             if (tv == null)
             {
-                throw new SecurityException("This TV is not paired with ClearFrame (or was removed). Pair it again.", SecurityExceptionType.Unauthenticated);
+                throw new SecurityException("This TV is not paired with Lobby (or was removed). Pair it again.", SecurityExceptionType.Unauthenticated);
             }
 
             // Only write "last seen" occasionally to avoid rewriting the config file on every request.

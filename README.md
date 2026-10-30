@@ -1,6 +1,8 @@
-# CleanFrame
+# Lobby
 
-A quieter home screen for Samsung The Frame. Your apps, a photograph and the time, with an interface made for the TV remote.
+A home screen for Samsung The Frame that starts with what you watch: your Emby server's Continue Watching, Live TV and teams, Seerr's trending titles, and your apps, with an interface made for the TV remote.
+
+Lobby is a fork of [CleanFrame](https://github.com/nthnclrk/CleanFrame) by nthnclrk, which provides the quiet home screen, wallpapers, settings and TV tooling. Lobby adds the Watch layout and an Emby plugin. Unless a section mentions Lobby, the notes below are CleanFrame's and describe the original author's TV and setup.
 
 ![CleanFrame browser preview using the bundled Manrope font](docs/images/cleanframe-dock.jpg)
 
@@ -15,8 +17,8 @@ I highly recommend forking it and building on top of it, ideally with a coding a
 You need Node.js 22.13+ (22 LTS), or 24+, and Python 3.10+ to run the browser preview.
 
 ```sh
-git clone https://github.com/nthnclrk/CleanFrame.git
-cd CleanFrame
+git clone https://github.com/CtznSniiips/ClearFrame.git
+cd ClearFrame
 npm ci
 npm run dev:public
 ```
@@ -35,15 +37,15 @@ The public preview uses the included Manrope, Geist and Newsreader fonts.
 
 The glass and blur are rendered ahead of time. The TV loads the finished images and uses transforms and opacity for focus feedback.
 
-## ClearFrame: Emby and Seerr on Home
+## Lobby: Emby and Seerr on Home
 
-This fork adds rows from your own Emby server and Seerr to Home: Continue Watching, Next Up, On Now, games for teams you follow, and Seerr's Trending and Popular lists. OK resumes or plays in the Emby app, or requests a title in Seerr as the right person. The Watch layout puts a rotating featured title at the top, with rows below in side-by-side bands and your apps in a dock along the bottom.
+Lobby adds rows from your own Emby server and Seerr to Home: Continue Watching, On Now, games for teams you follow, and Seerr's Trending and Popular lists. OK resumes or plays in the Emby app, or requests a title in Seerr as the right person. The Watch layout puts a rotating featured title at the top (including your teams' games when they're about to start), with one row per band below and your apps in a dock along the bottom.
 
-1. Install the ClearFrame Emby plugin from [`emby-plugin/`](emby-plugin/README.md) and set up Seerr and account links on its page.
+1. Install the Lobby Emby plugin from [`emby-plugin/`](emby-plugin/README.md) and set up Seerr and account links on its page.
 2. On the TV: Settings → Emby & Seerr → Connect, enter the server address and approve the code on the plugin page.
 3. Choose rows, order, teams and playback timing in Settings → Emby & Seerr. Those settings belong to the TV and are kept on the server.
 
-Unpaired, the app behaves exactly as CleanFrame. See [interaction behaviour](docs/interaction-behaviour.md#emby-and-seerr-rows-clearframe).
+Unpaired, the app behaves exactly as CleanFrame. See [interaction behaviour](docs/interaction-behaviour.md#emby-and-seerr-rows-lobby).
 
 ## Use a coding agent
 
@@ -99,7 +101,7 @@ The browser checks use isolated Chromium profiles and a loopback preview. They n
 | [Assets](docs/assets.md) / [third-party notices](THIRD_PARTY_NOTICES.md) | Rendering recipes, font separation and asset provenance |
 | [Asset sources](docs/asset-sources.md) | Photo credits and verification of the bundled third-party assets |
 | `.local/`, `dist/` | Ignored private setup, recovery data, generated files and packages |
-| [`emby-plugin/`](emby-plugin/README.md) | ClearFrame Emby plugin: home rows, Seerr requests and remote playback for paired TVs |
+| [`emby-plugin/`](emby-plugin/README.md) | Lobby Emby plugin: home rows, Seerr requests and remote playback for paired TVs |
 
 ## Contribute
 

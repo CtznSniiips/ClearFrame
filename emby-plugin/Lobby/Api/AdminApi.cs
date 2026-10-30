@@ -3,28 +3,28 @@ using System.Collections.Generic;
 using System.Linq;
 using System.Threading;
 using System.Threading.Tasks;
-using ClearFrame.Configuration;
-using ClearFrame.Services;
+using Lobby.Configuration;
+using Lobby.Services;
 using MediaBrowser.Controller.Net;
 using MediaBrowser.Model.Services;
 
-namespace ClearFrame.Api
+namespace Lobby.Api
 {
     // ---- Requests (all admin-only) --------------------------------------------------------------
 
-    [Route("/ClearFrame/Admin/State", "GET", Summary = "Everything the settings page shows.")]
+    [Route("/Lobby/Admin/State", "GET", Summary = "Everything the settings page shows.")]
     [Authenticated(Roles = "Admin")]
     public class GetAdminState : IReturn<AdminState>
     {
     }
 
-    [Route("/ClearFrame/Admin/Settings", "POST", Summary = "Saves general and Seerr settings.")]
+    [Route("/Lobby/Admin/Settings", "POST", Summary = "Saves general and Seerr settings.")]
     [Authenticated(Roles = "Admin")]
     public class SaveSettings : SettingsView, IReturn<SettingsView>
     {
     }
 
-    [Route("/ClearFrame/Admin/Seerr/Test", "POST", Summary = "Tests a Seerr URL and key without saving them.")]
+    [Route("/Lobby/Admin/Seerr/Test", "POST", Summary = "Tests a Seerr URL and key without saving them.")]
     [Authenticated(Roles = "Admin")]
     public class TestSeerr : IReturn<SeerrTestResult>
     {
@@ -34,55 +34,55 @@ namespace ClearFrame.Api
         public string SeerrApiKey { get; set; }
     }
 
-    [Route("/ClearFrame/Admin/Seerr/Users", "GET", Summary = "Seerr users, for linking.")]
+    [Route("/Lobby/Admin/Seerr/Users", "GET", Summary = "Seerr users, for linking.")]
     [Authenticated(Roles = "Admin")]
     public class GetSeerrUsers : IReturn<SeerrUsersResult>
     {
         public bool Refresh { get; set; }
     }
 
-    [Route("/ClearFrame/Admin/Links/Sync", "POST", Summary = "Rebuilds automatic links from Seerr and suggests matches. Manual links are kept.")]
+    [Route("/Lobby/Admin/Links/Sync", "POST", Summary = "Rebuilds automatic links from Seerr and suggests matches. Manual links are kept.")]
     [Authenticated(Roles = "Admin")]
     public class SyncLinks : IReturn<SyncReport>
     {
     }
 
-    [Route("/ClearFrame/Admin/Links", "POST", Summary = "Replaces all Emby↔Seerr links.")]
+    [Route("/Lobby/Admin/Links", "POST", Summary = "Replaces all Emby↔Seerr links.")]
     [Authenticated(Roles = "Admin")]
     public class SaveLinks : IReturn<UserLink[]>
     {
         public UserLink[] Links { get; set; }
     }
 
-    [Route("/ClearFrame/Admin/Pairings/Approve", "POST", Summary = "Approves a TV's pairing code.")]
+    [Route("/Lobby/Admin/Pairings/Approve", "POST", Summary = "Approves a TV's pairing code.")]
     [Authenticated(Roles = "Admin")]
     public class ApprovePairing : TvEdit, IReturn<TvView>
     {
         public string Code { get; set; }
     }
 
-    [Route("/ClearFrame/Admin/Pairings/Reject", "POST", Summary = "Rejects a TV's pairing code.")]
+    [Route("/Lobby/Admin/Pairings/Reject", "POST", Summary = "Rejects a TV's pairing code.")]
     [Authenticated(Roles = "Admin")]
     public class RejectPairing : IReturn<OkResult>
     {
         public string Code { get; set; }
     }
 
-    [Route("/ClearFrame/Admin/Tvs/Update", "POST", Summary = "Updates a paired TV.")]
+    [Route("/Lobby/Admin/Tvs/Update", "POST", Summary = "Updates a paired TV.")]
     [Authenticated(Roles = "Admin")]
     public class UpdateTv : TvEdit, IReturn<TvView>
     {
         public string Id { get; set; }
     }
 
-    [Route("/ClearFrame/Admin/Tvs/ResetSettings", "POST", Summary = "Puts a TV back on the server's default rows and timing.")]
+    [Route("/Lobby/Admin/Tvs/ResetSettings", "POST", Summary = "Puts a TV back on the server's default rows and timing.")]
     [Authenticated(Roles = "Admin")]
     public class ResetTvSettingsAdmin : IReturn<OkResult>
     {
         public string Id { get; set; }
     }
 
-    [Route("/ClearFrame/Admin/Tvs/Delete", "POST", Summary = "Unpairs a TV. Its token stops working immediately.")]
+    [Route("/Lobby/Admin/Tvs/Delete", "POST", Summary = "Unpairs a TV. Its token stops working immediately.")]
     [Authenticated(Roles = "Admin")]
     public class DeleteTv : IReturn<OkResult>
     {
@@ -223,8 +223,8 @@ namespace ClearFrame.Api
 
     public class AdminApi : IService
     {
-        private static ClearFrameRuntime Runtime =>
-            ClearFrameRuntime.Current ?? throw new InvalidOperationException("ClearFrame is still starting up.");
+        private static LobbyRuntime Runtime =>
+            LobbyRuntime.Current ?? throw new InvalidOperationException("Lobby is still starting up.");
 
         public object Get(GetAdminState request)
         {

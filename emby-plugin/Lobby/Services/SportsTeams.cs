@@ -3,7 +3,7 @@ using System.Collections.Generic;
 using System.Linq;
 using System.Text.RegularExpressions;
 
-namespace ClearFrame.Services
+namespace Lobby.Services
 {
     /// <summary>A team found in the guide, for the TV's team picker.</summary>
     public class GuideTeam

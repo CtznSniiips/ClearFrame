@@ -8,7 +8,7 @@ export default [{
       window: 'readonly', document: 'readonly', Image: 'readonly', localStorage: 'readonly',
       setTimeout: 'readonly', clearTimeout: 'readonly', Promise: 'readonly',
       XMLHttpRequest: 'readonly',
-      FrameDevice: 'readonly', ClearFrameMedia: 'readonly', tizen: 'readonly'
+      FrameDevice: 'readonly', LobbyMedia: 'readonly', tizen: 'readonly'
     }
   },
   rules: {

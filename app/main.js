@@ -82,9 +82,9 @@
   };
   var scroll = { first: 0, off: 0, photo: 0, photoArrange: 0 };
 
-  /* ClearFrame: Emby and Seerr rows from the paired server. Absent until the owner pairs this TV,
+  /* Lobby: Emby and Seerr rows from the paired server. Absent until the owner pairs this TV,
      so an unpaired Home is unchanged. */
-  var Media = window.ClearFrameMedia;
+  var Media = window.LobbyMedia;
   var W = { i: 0, timer: 0, src: null, back: 0, pre: null, preImg: null, band: 0, side: 0 };
   var M = { cfg: null, data: null, rows: [], loading: false, error: null, at: 0, request: 0, unauthorized: false,
     featured: [], cols: {}, row: 0, settings: null, settingsLoading: false, settingsError: null, saving: null, note: null, timer: 0 };
@@ -1141,7 +1141,7 @@
       t.requesters = (data && Array.isArray(data.Requesters) ? data.Requesters : []).slice(0, 6).filter(function (r) { return r && count(r.Id) > 0; })
         .map(function (r) { return { id: r.Id, name: text(r.Name, 40) || 'Seerr user ' + r.Id }; });
       if (!data || data.RequestsEnabled === false) requestInfo(t, 'Requests are turned off on your Emby server.');
-      else if (!t.requesters.length) requestInfo(t, 'This TV’s Emby account isn’t linked to a Seerr account yet. Link it in the ClearFrame plugin settings on your server.');
+      else if (!t.requesters.length) requestInfo(t, 'This TV’s Emby account isn’t linked to a Seerr account yet. Link it in the Lobby plugin settings on your server.');
       else {
         t.step = 'choose';
         // Play stays first for partly available shows; otherwise start on the last requester.
@@ -1209,7 +1209,7 @@
         Media.startPairing(url, who.name, who.duid, function (err2, p) {
           if (top() !== t || token !== t.token) return;
           if (err2 || !p || !p.Code || !p.PairingId || !p.Secret) {
-            connectFail(t, err2 && err2.code === 'missing' ? 'Emby is running, but the ClearFrame plugin isn’t installed on it.' : mediaError(err2).message);
+            connectFail(t, err2 && err2.code === 'missing' ? 'Emby is running, but the Lobby plugin isn’t installed on it.' : mediaError(err2).message);
             render(); return;
           }
           t.pairing = { id: String(p.PairingId), secret: String(p.Secret), code: text(p.Code, 12) };
@@ -1368,7 +1368,7 @@
     if (!part || part.disabled) return;
     if (part.id === 'refresh') { refreshMedia(true); if (!s) loadMediaSettings(); return; }
     if (part.id === 'retry') { loadMediaSettings(); return; }
-    if (part.id === 'disconnect') { push({ id: 'message', content: { title: 'Disconnect this TV?', line: 'ClearFrame will forget ' + Media.host(M.cfg.url) + '.', note: 'Home rows go away until you connect again. Your server keeps this TV’s pairing until you remove it there.', actions: [['cancel', 'Cancel'], ['disconnect', 'Disconnect']] }, f: { b: 0 } }); return; }
+    if (part.id === 'disconnect') { push({ id: 'message', content: { title: 'Disconnect this TV?', line: 'Lobby will forget ' + Media.host(M.cfg.url) + '.', note: 'Home rows go away until you connect again. Your server keeps this TV’s pairing until you remove it there.', actions: [['cancel', 'Cancel'], ['disconnect', 'Disconnect']] }, f: { b: 0 } }); return; }
     if (!s || M.saving) return;
     if (part.id === 'teams') { openTeams(); return; }
     if (part.id === 'reset') {
@@ -2558,7 +2558,7 @@
       } else if (t.step === 'code') {
         sub = 'Found ' + esc(t.server ? t.server.name : 'Emby') + '. Approve this TV on your server.';
         html = '<div class="cn-code" aria-label="Pairing code ' + esc(t.pairing.code.split('').join(' ')) + '">' + esc(t.pairing.code) + '</div>'
-          + '<p class="cn-steps">In Emby on another device, open Dashboard → Plugins → ClearFrame. Check the code matches, choose who this TV watches as, then Approve.</p><p class="cn-wait">Waiting for approval…</p>';
+          + '<p class="cn-steps">In Emby on another device, open Dashboard → Plugins → Lobby. Check the code matches, choose who this TV watches as, then Approve.</p><p class="cn-wait">Waiting for approval…</p>';
       } else if (t.step === 'done') {
         sub = 'Connected' + (t.tvName ? ' as ' + esc(t.tvName) : '') + '.';
         html = '<p class="cn-steps">Your rows appear on Home in a moment. Change which rows show in Settings → Emby &amp; Seerr.</p>';

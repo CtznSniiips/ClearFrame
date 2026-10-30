@@ -4,20 +4,20 @@ using System.Collections.Generic;
 using System.Linq;
 using System.Threading;
 using System.Threading.Tasks;
-using ClearFrame.Configuration;
-using ClearFrame.Services;
+using Lobby.Configuration;
+using Lobby.Services;
 using MediaBrowser.Common.Extensions;
 using MediaBrowser.Controller.Net;
 using MediaBrowser.Model.Services;
 
-namespace ClearFrame.Api
+namespace Lobby.Api
 {
     // ---- Requests -------------------------------------------------------------------------------
     // TV endpoints skip Emby authentication ([Unauthenticated]; Emby 4.10 requires auth by default).
-    // A TV proves itself with the X-ClearFrame-Token header it received when it was paired;
+    // A TV proves itself with the X-Lobby-Token header it received when it was paired;
     // pairing itself needs no token.
 
-    [Route("/ClearFrame/Pair", "POST", Summary = "Starts pairing a TV. Show the returned code on screen and poll /ClearFrame/Pair/Status.")]
+    [Route("/Lobby/Pair", "POST", Summary = "Starts pairing a TV. Show the returned code on screen and poll /Lobby/Pair/Status.")]
     [Unauthenticated]
     public class StartPairing : IReturn<StartPairingResponse>
     {
@@ -27,7 +27,7 @@ namespace ClearFrame.Api
         public string Duid { get; set; }
     }
 
-    [Route("/ClearFrame/Pair/Status", "GET", Summary = "Polls a pairing. Returns the TV token once an admin has approved it.")]
+    [Route("/Lobby/Pair/Status", "GET", Summary = "Polls a pairing. Returns the TV token once an admin has approved it.")]
     [Unauthenticated]
     public class GetPairingStatus : IReturn<PairingStatusResponse>
     {
@@ -35,25 +35,25 @@ namespace ClearFrame.Api
         public string Secret { get; set; }
     }
 
-    [Route("/ClearFrame/Ping", "GET", Summary = "Checks the TV token.")]
+    [Route("/Lobby/Ping", "GET", Summary = "Checks the TV token.")]
     [Unauthenticated]
     public class Ping : IReturn<PingResponse>
     {
     }
 
-    [Route("/ClearFrame/Home", "GET", Summary = "Home screen rows for this TV.")]
+    [Route("/Lobby/Home", "GET", Summary = "Home screen rows for this TV.")]
     [Unauthenticated]
     public class GetHome : IReturn<HomeResponse>
     {
     }
 
-    [Route("/ClearFrame/Requesters", "GET", Summary = "Seerr users this TV can request as.")]
+    [Route("/Lobby/Requesters", "GET", Summary = "Seerr users this TV can request as.")]
     [Unauthenticated]
     public class GetRequesters : IReturn<RequestersResponse>
     {
     }
 
-    [Route("/ClearFrame/Request", "POST", Summary = "Requests a movie or show in Seerr.")]
+    [Route("/Lobby/Request", "POST", Summary = "Requests a movie or show in Seerr.")]
     [Unauthenticated]
     public class SubmitRequest : IReturn<SubmitRequestResponse>
     {
@@ -66,7 +66,7 @@ namespace ClearFrame.Api
         public int SeerrUserId { get; set; }
     }
 
-    [Route("/ClearFrame/Play", "POST", Summary = "Plays, resumes or shows an item in the Emby app on this TV. Call this, then launch Emby.")]
+    [Route("/Lobby/Play", "POST", Summary = "Plays, resumes or shows an item in the Emby app on this TV. Call this, then launch Emby.")]
     [Unauthenticated]
     public class Play : IReturn<DispatchResult>
     {
@@ -79,13 +79,13 @@ namespace ClearFrame.Api
         public long? StartPositionTicks { get; set; }
     }
 
-    [Route("/ClearFrame/Settings", "GET", Summary = "This TV's settings: rows (in order, with visibility) and playback timing.")]
+    [Route("/Lobby/Settings", "GET", Summary = "This TV's settings: rows (in order, with visibility) and playback timing.")]
     [Unauthenticated]
     public class GetTvSettings : IReturn<TvSettingsResponse>
     {
     }
 
-    [Route("/ClearFrame/Settings", "POST", Summary = "Changes this TV's settings. Omitted (null) fields stay as they are.")]
+    [Route("/Lobby/Settings", "POST", Summary = "Changes this TV's settings. Omitted (null) fields stay as they are.")]
     [Unauthenticated]
     public class SaveTvSettings : IReturn<TvSettingsResponse>
     {
@@ -104,13 +104,13 @@ namespace ClearFrame.Api
         public string[] SportsTeams { get; set; }
     }
 
-    [Route("/ClearFrame/Settings/Reset", "POST", Summary = "Returns this TV to the server's default rows and timing. Sports teams are kept.")]
+    [Route("/Lobby/Settings/Reset", "POST", Summary = "Returns this TV to the server's default rows and timing. Sports teams are kept.")]
     [Unauthenticated]
     public class ResetTvSettings : IReturn<TvSettingsResponse>
     {
     }
 
-    [Route("/ClearFrame/Sports/Teams", "GET", Summary = "Teams found in the guide's upcoming sports listings, for picking with the remote.")]
+    [Route("/Lobby/Sports/Teams", "GET", Summary = "Teams found in the guide's upcoming sports listings, for picking with the remote.")]
     [Unauthenticated]
     public class GetGuideTeams : IReturn<GuideTeamsResponse>
     {
@@ -222,8 +222,8 @@ namespace ClearFrame.Api
 
     public class TvApi : IService, IRequiresRequest
     {
-        public const string TokenHeader = "X-ClearFrame-Token";
-        public const string AuthScheme = "ClearFrame";
+        public const string TokenHeader = "X-Lobby-Token";
+        public const string AuthScheme = "Lobby";
 
         // TV id -> (Seerr user id, when)
         private static readonly ConcurrentDictionary<string, Tuple<int, DateTime>> LastRequester =
@@ -231,8 +231,8 @@ namespace ClearFrame.Api
 
         public IRequest Request { get; set; }
 
-        private static ClearFrameRuntime Runtime =>
-            ClearFrameRuntime.Current ?? throw new InvalidOperationException("ClearFrame is still starting up.");
+        private static LobbyRuntime Runtime =>
+            LobbyRuntime.Current ?? throw new InvalidOperationException("Lobby is still starting up.");
 
         public object Post(StartPairing request)
         {
@@ -410,7 +410,7 @@ namespace ClearFrame.Api
 
             if (string.IsNullOrWhiteSpace(tv.EmbyDeviceId) && string.IsNullOrWhiteSpace(tv.Duid))
             {
-                return new DispatchResult { Status = "failed", Message = "This TV has no Emby app device assigned in the ClearFrame settings." };
+                return new DispatchResult { Status = "failed", Message = "This TV has no Emby app device assigned in the Lobby settings." };
             }
 
             var timing = TvSettings.Resolve(tv, Plugin.Instance.Configuration);
@@ -596,8 +596,8 @@ namespace ClearFrame.Api
         }
 
         /// <summary>
-        /// The TV token comes as "Authorization: ClearFrame &lt;token&gt;" (on Emby's CORS allow list, so browser-based
-        /// clients pass the preflight) or, for older clients, as X-ClearFrame-Token.
+        /// The TV token comes as "Authorization: Lobby &lt;token&gt;" (on Emby's CORS allow list, so browser-based
+        /// clients pass the preflight) or, for older clients, as X-Lobby-Token.
         /// </summary>
         private TvDevice Authenticate()
         {

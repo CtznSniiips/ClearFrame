@@ -27,7 +27,7 @@
     catch (err) { return SELF; }
   }
   function unavailable(done) {
-    done({ message: 'Open CleanFrame on the TV to use this control.', detail: 'The web preview cannot control the TV.' });
+    done({ message: 'Open Lobby on the TV to use this control.', detail: 'The web preview cannot control the TV.' });
   }
   function failure(err) {
     return { message: 'The TV could not open this screen.', detail: err && (err.message || err.name) || 'Try again, or press the remote’s Home button to return to CleanFrame.' };
@@ -57,7 +57,7 @@
     } catch (err) { finish(failure(err)); }
   }
   function home(done) { launchApp('com.samsung.tv.csfs', done); }
-  /* Emby for Samsung. ClearFrame asks the Emby server to queue playback first, then opens the app. */
+  /* Emby for Samsung. Lobby asks the Emby server to queue playback first, then opens the app. */
   var EMBY = 'vYmY3ACVaa.emby';
   function emby(done) {
     if (!api()) { unavailable(done); return; }

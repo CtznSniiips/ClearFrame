@@ -145,7 +145,7 @@ define([], function () {
             var el = cf('tvs');
             if (!state.Tvs.length) {
                 el.innerHTML = state.PendingPairings.length ? '' :
-                    '<div class="cf-empty">No TVs paired yet. Start pairing from ClearFrame on the TV.</div>';
+                    '<div class="cf-empty">No TVs paired yet. Start pairing from Lobby on the TV.</div>';
                 return;
             }
             el.innerHTML = state.Tvs.map(function (t) {
@@ -156,7 +156,7 @@ define([], function () {
                         : '<span class="cf-dot"></span>Emby app not found yet');
                 return '<div class="cf-card" data-tv="' + esc(t.Id) + '">' +
                     '<div class="cf-card-head"><span class="cf-card-title">' + esc(t.Name) + '</span>' +
-                    '<span class="cf-status">' + appStatus + ' · ClearFrame last seen ' + esc(ago(t.LastSeenUtc)) +
+                    '<span class="cf-status">' + appStatus + ' · Lobby last seen ' + esc(ago(t.LastSeenUtc)) +
                     (t.EmbyUserName ? ' · as ' + esc(t.EmbyUserName) : ' · <b>no Emby user</b>') + '</span></div>' +
                     '<div class="cf-summary">' + (t.SettingsCustomized ? '<b>Settings changed on the TV</b>' : 'Using the TV defaults below') +
                     ': ' + esc((t.VisibleRows || []).join(', ') || 'no rows') + ' · ' + t.RowLimit + ' per row · play delay ' +
@@ -252,7 +252,7 @@ define([], function () {
                 seerrUsers = [];
                 return Promise.resolve();
             }
-            return api('GET', 'ClearFrame/Admin/Seerr/Users' + (refresh ? '?Refresh=true' : '')).then(function (result) {
+            return api('GET', 'Lobby/Admin/Seerr/Users' + (refresh ? '?Refresh=true' : '')).then(function (result) {
                 seerrUsers = result.Users || [];
                 if (result.Error) {
                     show(cf('seerr-message'), result.Error, false);
@@ -265,7 +265,7 @@ define([], function () {
 
         function load(refreshSeerr) {
             loading(true);
-            return api('GET', 'ClearFrame/Admin/State').then(function (result) {
+            return api('GET', 'Lobby/Admin/State').then(function (result) {
                 state = result;
                 links = (state.Links || []).slice();
                 return loadSeerrUsers(refreshSeerr);
@@ -275,7 +275,7 @@ define([], function () {
                 renderSettings();
                 renderLinks();
             }).catch(function (err) {
-                Dashboard.alert('ClearFrame: ' + err.message);
+                Dashboard.alert('Lobby: ' + err.message);
             }).then(function () {
                 loading(false);
             });
@@ -293,7 +293,7 @@ define([], function () {
             } else if (name === 'test-seerr') {
                 var msg = cf('seerr-message');
                 show(msg, 'Testing…', true);
-                api('POST', 'ClearFrame/Admin/Seerr/Test', {
+                api('POST', 'Lobby/Admin/Seerr/Test', {
                     SeerrUrl: $('#cfSeerrUrl').value.trim(),
                     SeerrApiKey: $('#cfSeerrKey').value.trim()
                 }).then(function (r) { show(msg, r.Message, r.Ok); }, function (err) { show(msg, err.message, false); });
@@ -303,7 +303,7 @@ define([], function () {
                     ? cf('seerr-message')
                     : cf('settings-message');
                 loading(true);
-                api('POST', 'ClearFrame/Admin/Settings', collectSettings()).then(function (settings) {
+                api('POST', 'Lobby/Admin/Settings', collectSettings()).then(function (settings) {
                     state.Settings = settings;
                     show(smsg, 'Settings saved.', true);
                     return loadSeerrUsers(true).then(function () { renderSettings(); renderLinks(); });
@@ -311,7 +311,7 @@ define([], function () {
             } else if (name === 'sync-links') {
                 var lmsg = cf('links-message');
                 loading(true);
-                api('POST', 'ClearFrame/Admin/Links/Sync', {}).then(function (report) {
+                api('POST', 'Lobby/Admin/Links/Sync', {}).then(function (report) {
                     links = (report.Links || []).slice();
                     show(lmsg, 'Synced: ' + report.SeerrUsers + ' Seerr users, ' + report.AutoLinked + ' auto-linked, ' +
                         report.Suggested + ' suggested, ' + report.ManualKept + ' manual kept.', true);
@@ -319,7 +319,7 @@ define([], function () {
                 }, function (err) { show(lmsg, err.message, false); }).then(function () { loading(false); });
             } else if (name === 'save-links') {
                 var lmsg2 = cf('links-message');
-                api('POST', 'ClearFrame/Admin/Links', { Links: links }).then(function (saved) {
+                api('POST', 'Lobby/Admin/Links', { Links: links }).then(function (saved) {
                     links = (saved || []).slice();
                     renderLinks();
                     show(lmsg2, 'Links saved.', true);
@@ -344,18 +344,18 @@ define([], function () {
                 var call;
                 if (act === 'approve') {
                     values.Code = card.getAttribute('data-code');
-                    call = api('POST', 'ClearFrame/Admin/Pairings/Approve', values);
+                    call = api('POST', 'Lobby/Admin/Pairings/Approve', values);
                 } else if (act === 'reject') {
-                    call = api('POST', 'ClearFrame/Admin/Pairings/Reject', { Code: card.getAttribute('data-code') });
+                    call = api('POST', 'Lobby/Admin/Pairings/Reject', { Code: card.getAttribute('data-code') });
                 } else if (act === 'save-tv') {
                     values.Id = card.getAttribute('data-tv');
-                    call = api('POST', 'ClearFrame/Admin/Tvs/Update', values);
+                    call = api('POST', 'Lobby/Admin/Tvs/Update', values);
                 } else if (act === 'reset-tv') {
                     if (!window.confirm('Put this TV back on the default rows and timing? Its sports teams are kept.')) { return; }
-                    call = api('POST', 'ClearFrame/Admin/Tvs/ResetSettings', { Id: card.getAttribute('data-tv') });
+                    call = api('POST', 'Lobby/Admin/Tvs/ResetSettings', { Id: card.getAttribute('data-tv') });
                 } else if (act === 'delete-tv') {
-                    if (!window.confirm('Unpair this TV? ClearFrame on it will need to pair again.')) { return; }
-                    call = api('POST', 'ClearFrame/Admin/Tvs/Delete', { Id: card.getAttribute('data-tv') });
+                    if (!window.confirm('Unpair this TV? Lobby on it will need to pair again.')) { return; }
+                    call = api('POST', 'Lobby/Admin/Tvs/Delete', { Id: card.getAttribute('data-tv') });
                 }
                 if (call) {
                     call.then(function () {

@@ -1,4 +1,4 @@
-// ClearFrame rows, pairing, requests and per-TV settings. The Emby plugin's TV API is mocked at
+// Lobby rows, pairing, requests and per-TV settings. The Emby plugin's TV API is mocked at
 // the network boundary (including CORS preflights); the public Tizen API is mocked as in
 // check-browser.mjs. No Emby server, Seerr or TV is contacted.
 import { mkdirSync, readFileSync, writeFileSync } from 'node:fs';
@@ -7,7 +7,7 @@ import { openPreview, root } from './browser.mjs';
 const SERVER = 'http://cf.test:8096', TOKEN = 'tok_0123456789abcdefghijklmnop', EMBY_APP = 'vYmY3ACVaa.emby';
 const out = root + '.local/qa/media/';
 mkdirSync(out, { recursive: true });
-const report = { scope: 'Production UI in Chromium; mocked ClearFrame plugin API and Tizen API; no network.', checks: [], failures: [], pageErrors: [] };
+const report = { scope: 'Production UI in Chromium; mocked Lobby plugin API and Tizen API; no network.', checks: [], failures: [], pageErrors: [] };
 let preview, current, section = '', api;
 
 function check(name, pass, detail) {
@@ -23,7 +23,7 @@ async function run(name, fn) {
   finally { if (current) { current.__closing = true; await current.close(); current = null; } }
 }
 
-/* ---------- Mock ClearFrame plugin ---------- */
+/* ---------- Mock Lobby plugin ---------- */
 const ROWS = [
   { Id: 'continue', Title: 'Continue Watching', Source: 'library' },
   { Id: 'nextup', Title: 'Next Up', Source: 'library' },
@@ -103,18 +103,18 @@ async function handle(route) {
   const body = req.postData() ? JSON.parse(req.postData()) : null, auth = req.headers().authorization || '';
   api.calls.push({ method, path, body, auth, search: url.search });
   if (path === '/emby/System/Info/Public') return json(200, { ServerName: 'Basement', Version: '4.10.2.0', Id: 'abc' });
-  if (path === '/emby/ClearFrame/Pair' && method === 'POST') {
+  if (path === '/emby/Lobby/Pair' && method === 'POST') {
     if (api.noPlugin) return json(404, { message: 'not found' });
     api.pairs.push(body); return json(200, { PairingId: 'pid1', Code: 'K7QX', Secret: 'sec1', ExpiresInSeconds: 900 });
   }
-  if (path === '/emby/ClearFrame/Pair/Status') {
+  if (path === '/emby/Lobby/Pair/Status') {
     api.statusCalls++;
     if (url.searchParams.get('Secret') !== 'sec1') return json(200, { Status: 'expired' });
     return json(200, api.statusCalls >= api.approveAfter ? { Status: 'approved', Token: TOKEN, TvName: 'Living Room' } : { Status: 'pending' });
   }
-  if (!path.startsWith('/emby/ClearFrame/')) return json(404, { message: 'nope' });
-  if (api.unauthorized || auth !== 'ClearFrame ' + TOKEN) return json(401, { Message: 'This TV is not paired with ClearFrame (or was removed). Pair it again.' });
-  const op = path.slice('/emby/ClearFrame'.length);
+  if (!path.startsWith('/emby/Lobby/')) return json(404, { message: 'nope' });
+  if (api.unauthorized || auth !== 'Lobby ' + TOKEN) return json(401, { Message: 'This TV is not paired with Lobby (or was removed). Pair it again.' });
+  const op = path.slice('/emby/Lobby'.length);
   if (op === '/Home') return json(200, homeJson());
   if (op === '/Settings' && method === 'GET') return json(200, settingsJson());
   if (op === '/Settings' && method === 'POST') {
@@ -132,7 +132,7 @@ async function handle(route) {
   if (op === '/Sports/Teams') return json(200, { Days: 7, Teams: api.teamsList.map(t => ({ ...t })), Message: null });
   if (op === '/Requesters') return json(200, { RequestsEnabled: api.requestsEnabled, Requesters: api.requesters, LastRequesterId: api.lastRequester, UsingFallback: false });
   if (op === '/Request') { api.requests.push(body); return json(200, api.requestStatus === 0 ? { Status: 'failed', Message: 'Request for this media already exists.' } : { Status: api.requestStatus === 2 ? 'approved' : 'requested', RequestId: 9 }); }
-  if (op === '/Play') { api.plays.push(body); return json(200, api.playStatus === 'failed' ? { Status: 'failed', Message: 'This TV has no Emby app device assigned in the ClearFrame settings.' } : { Status: api.playStatus }); }
+  if (op === '/Play') { api.plays.push(body); return json(200, api.playStatus === 'failed' ? { Status: 'failed', Message: 'This TV has no Emby app device assigned in the Lobby settings.' } : { Status: api.playStatus }); }
   return json(404, { Message: 'Unknown' });
 }
 
@@ -140,8 +140,8 @@ async function handle(route) {
 function installHarness({ paired, cacheHome, staleMs, look, featureMs }) {
   if (!sessionStorage.getItem('__seeded')) {
     localStorage.setItem('cleanframe.home.v1', JSON.stringify({ dock: ['stremio', 'netflix', 'disneyplus', 'youtube', 'appletv', 'primevideo', 'abciview', 'sbs', 'applemusic'], wallpaper: 'misty', mode: 'fixed', lastApp: 'netflix', theme: 'shore', ...(look ? { look: { layout: look } } : {}) }));
-    if (paired) localStorage.setItem('clearframe.server.v1', JSON.stringify({ url: 'http://cf.test:8096', token: 'tok_0123456789abcdefghijklmnop', tvName: 'Living Room' }));
-    if (cacheHome) localStorage.setItem('clearframe.home.cache.v1', JSON.stringify({ at: 1, data: cacheHome }));
+    if (paired) localStorage.setItem('lobby.server.v1', JSON.stringify({ url: 'http://cf.test:8096', token: 'tok_0123456789abcdefghijklmnop', tvName: 'Living Room' }));
+    if (cacheHome) localStorage.setItem('lobby.home.cache.v1', JSON.stringify({ at: 1, data: cacheHome }));
     sessionStorage.setItem('__seeded', '1');
   }
   window.ShoreQA = { minuteMs: 60000, pollMs: 40, staleMs: staleMs || 30000, featureMs: featureMs || 600000 };
@@ -239,7 +239,7 @@ async function main() {
       check('pairing sent a device name', api.pairs[0] && api.pairs[0].DeviceName === 'Samsung TV', api.pairs);
       await shot('connect-code');
       await until(() => ShoreQA.state().media.step === 'done');
-      const saved = await current.evaluate(() => JSON.parse(localStorage.getItem('clearframe.server.v1')));
+      const saved = await current.evaluate(() => JSON.parse(localStorage.getItem('lobby.server.v1')));
       check('token saved for the server', saved.url === SERVER && saved.token === TOKEN && saved.tvName === 'Living Room', saved);
       check('token never shown on screen', !(await current.locator('body').textContent()).includes(TOKEN));
       check('a newly paired TV switches Home to Watch', (await state()).layout === 'watch');
@@ -247,7 +247,7 @@ async function main() {
       await until(() => ShoreQA.state().view === 'mediaset' && !!ShoreQA.state().media.settings);
       await nav('back', 'back');
       await until(() => ShoreQA.state().view === 'home' && ShoreQA.state().media.rows.length > 0);
-      check('every authenticated call used the ClearFrame scheme', api.calls.filter(c => c.path.startsWith('/emby/ClearFrame/') && !c.path.includes('/Pair')).every(c => c.auth === 'ClearFrame ' + TOKEN));
+      check('every authenticated call used the Lobby scheme', api.calls.filter(c => c.path.startsWith('/emby/Lobby/') && !c.path.includes('/Pair')).every(c => c.auth === 'Lobby ' + TOKEN));
       check('token never sent in a URL', api.calls.every(c => !c.search.includes(TOKEN)));
     });
 
@@ -262,7 +262,7 @@ async function main() {
       api.unreachable = false; api.noPlugin = true;
       await act('act.retry');
       await until(() => ShoreQA.state().media.step === 'error' && document.querySelector('.s-sub').textContent.includes('plugin'));
-      check('missing plugin named', (await current.locator('.s-sub').textContent()).includes('ClearFrame plugin isn’t installed'));
+      check('missing plugin named', (await current.locator('.s-sub').textContent()).includes('Lobby plugin isn’t installed'));
       await act('act.edit');
       check('Change address returns to the keypad with the address kept', (await state()).media.step === 'address' && (await current.locator('.cn-field').textContent()).trim() === 'cf.test');
       await nav('back');
@@ -461,7 +461,7 @@ async function main() {
       await nav('right', 'ok');
       const s = await state();
       check('back on Settings, forgotten', s.view === 'settings' && !s.media.paired && s.media.rows.length === 0);
-      check('storage cleared', await current.evaluate(() => !localStorage.getItem('clearframe.server.v1') && !localStorage.getItem('clearframe.home.cache.v1')));
+      check('storage cleared', await current.evaluate(() => !localStorage.getItem('lobby.server.v1') && !localStorage.getItem('lobby.home.cache.v1')));
       await nav('back');
       check('Home rows gone', await current.locator('#media').evaluate(el => getComputedStyle(el).display) === 'none');
       await current.close(); current = null;
