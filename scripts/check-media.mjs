@@ -481,7 +481,9 @@ async function main() {
       check('Watch is in use', s.media.layout === 'watch' && await current.locator('#watch').evaluate(el => getComputedStyle(el).display) === 'block');
       check('the Dock and rows of the other layouts are hidden', await current.locator('#dock').evaluate(el => getComputedStyle(el).display) === 'none');
       check('featured titles in server order', s.media.featured.join() === 'f1,movie:880,f3', s.media.featured);
-      check('paired rows share a band; Trending sits left of Your Teams', s.media.bands.join() === 'continue+nextup,livenow,seerr-trending+sports,seerr-movies,apps', s.media.bands);
+      check('paired rows share a band; Trending sits left of Your Teams', s.media.bands.join() === 'continue+nextup,livenow,seerr-trending+sports,seerr-movies', s.media.bands);
+      const dock = await rect('#wDock');
+      check('the apps dock shows at the bottom from the start', (await current.locator('#wDock .wapp').count()) === 9 && dock.b <= 1080 && dock.y >= 900, dock);
       check('Home starts on the featured title', (await where()).focusAction === 'watch.featured.f1', await where());
       check('the tagline heads the featured title', (await current.locator('.wi-head').textContent()) === 'Why are they here?');
       check('the button names the action', (await current.locator('.wi-btn').textContent()) === 'Resume');
@@ -524,10 +526,14 @@ async function main() {
       check('Seerr tiles carry no labels', await current.locator('.wc.is-focus .wc-label').count() === 0);
       await current.waitForTimeout(450); await shot('watch-rows');
       await nav('down', 'down');
-      check('the Home apps come last', (await where()).focusAction === 'home.app.stremio', await where());
+      check('Down from the last band reaches the dock', (await where()).focusAction === 'home.app.stremio', await where());
+      check('the dock names its apps', (await current.locator('.wapp.is-focus .wapp-name').textContent()) === 'Stremio');
       await current.waitForTimeout(400);
       const app = await rect('.wapp.is-focus');
-      check('the focused band scrolls into view', app.b <= 1080 && app.y >= 0, app);
+      check('the dock stays in place', app.b <= 1080 && app.y >= 900, app);
+      await nav('up');
+      check('Up from the dock returns to the band last used', (await where()).focusAction === 'media.seerr-movies.movie:603', await where());
+      await nav('down');
       await current.waitForTimeout(450); await shot('watch-apps');
       await nav('right', 'ok');
       await current.waitForTimeout(80);
@@ -541,6 +547,7 @@ async function main() {
     });
 
     await run('Watch layout: rotation, fallback and missing titles', async () => {
+      let s2;
       api = freshApi(); await page({ paired: true, look: 'watch', featureMs: 300 });
       await until(() => ShoreQA.state().media.featuredIndex === 1);
       check('featured titles change on their own', true);
@@ -550,10 +557,20 @@ async function main() {
       check('they stay put while a row has focus', (await state()).media.featuredIndex === at);
       await current.close(); current = null;
 
-      api = freshApi({ featured: [] }); await page({ paired: true, look: 'watch' });
-      check('without featured titles Home starts in the first band', (await where()).focusAction === 'media.continue.101', await where());
-      await nav('up');
-      check('Up from the first band reaches the rail', (await where()).zone === 'wrail');
+      api = freshApi({ featured: undefined }); await page({ paired: true, look: 'watch' });
+      s2 = await state();
+      check('without featured titles from the server, the first of Continue Watching and Next Up are featured', s2.media.featured.join() === '101,200', s2.media.featured);
+      check('they leave their rows', !s2.media.rows.find(r => r.id === 'continue').items.includes('101') && !s2.media.rows.find(r => r.id === 'nextup').items.includes('200'));
+      check('the headline is the title, with the reason beside the button', (await current.locator('.wi-head').textContent()) === 'Arrival' && (await current.locator('.wi-meta').textContent()).startsWith('Continue watching'));
+      await current.close(); current = null;
+
+      api = freshApi({ featured: [] });
+      ITEMS.continue.forEach(i => { i.__l = i.LandscapeUrl; i.LandscapeUrl = ''; }); ITEMS.nextup.forEach(i => { i.__l = i.LandscapeUrl; i.LandscapeUrl = ''; });
+      try { await page({ paired: true, look: 'watch' }); }
+      finally { ITEMS.continue.concat(ITEMS.nextup).forEach(i => { i.LandscapeUrl = i.__l; delete i.__l; }); }
+      check('with nothing to feature, Home starts in the first band', (await where()).focusAction === 'media.continue.101', await where());
+      await nav('left');
+      check('Left from the first card reaches the rail', (await where()).zone === 'wrail');
       await current.close(); current = null;
 
       api = freshApi(); await page({ look: 'watch' });
