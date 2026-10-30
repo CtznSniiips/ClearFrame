@@ -62,6 +62,21 @@ namespace ClearFrame.Services
         /// </summary>
         public string PlayAction { get; set; }
 
+        /// <summary>Featured items: a short line for the big headline (falls back to the title on the TV).</summary>
+        public string Tagline { get; set; }
+
+        /// <summary>Featured items: full-width background art.</summary>
+        public string BackdropUrl { get; set; }
+
+        /// <summary>Featured items: the title's logo art, when the library has one.</summary>
+        public string LogoUrl { get; set; }
+
+        /// <summary>Featured items: e.g. "2024 · PG-13 · 2h 10m" or "S1 E5 · 32 min left".</summary>
+        public string Meta { get; set; }
+
+        /// <summary>Featured items: resume, new or trending.</summary>
+        public string FeatureReason { get; set; }
+
         /// <summary>Identities used to show each title only once across rows. Not sent to TVs.</summary>
         internal List<string> Keys { get; } = new List<string>();
     }
@@ -85,6 +100,9 @@ namespace ClearFrame.Services
         public string GeneratedUtc { get; set; }
         public List<HomeRow> Rows { get; set; } = new List<HomeRow>();
 
+        /// <summary>Up to five titles for the large area at the top of Home. Not repeated in Rows.</summary>
+        public List<HomeItem> Featured { get; set; } = new List<HomeItem>();
+
         /// <summary>Non-fatal problems, e.g. Seerr unreachable. The rest of the home screen still works.</summary>
         public List<string> Warnings { get; set; } = new List<string>();
     }
@@ -93,6 +111,7 @@ namespace ClearFrame.Services
     public class HomeBuilder
     {
         private const string TmdbImageBase = "https://image.tmdb.org/t/p/";
+        private const int FeaturedCount = 5;
 
         private readonly ILibraryManager _library;
         private readonly IUserManager _users;
@@ -161,6 +180,10 @@ namespace ClearFrame.Services
                 if (settings.IsVisible(TvSettings.SeerrMovies)) seerrTasks.Add(Tuple.Create(TvSettings.SeerrMovies, "movies", SafeDiscover("movies", ct)));
                 if (settings.IsVisible(TvSettings.SeerrShows)) seerrTasks.Add(Tuple.Create(TvSettings.SeerrShows, "tv", SafeDiscover("tv", ct)));
             }
+
+            // The featured area always draws on Trending, even when the Trending row is hidden.
+            var featuredTrending = !_seerr.IsConfigured ? null
+                : seerrTasks.Where(t => t.Item1 == TvSettings.SeerrTrending).Select(t => t.Item3).FirstOrDefault() ?? SafeDiscover("trending", ct);
 
             var resumeIds = new HashSet<string>();
             if (settings.IsVisible(TvSettings.Continue))
@@ -259,9 +282,19 @@ namespace ClearFrame.Services
                 }
             }
 
+            var featured = new List<HomeItem>();
             try
             {
-                MatchLibrary(user, built.Values.Where(r => r.Id.StartsWith("seerr-", StringComparison.Ordinal)).SelectMany(r => r.Items).ToList(), dtoOptions);
+                featured = await BuildFeatured(user, featuredTrending, ct).ConfigureAwait(false);
+            }
+            catch (Exception ex)
+            {
+                _logger.ErrorException("could not build the featured titles", ex);
+            }
+
+            try
+            {
+                MatchLibrary(user, featured.Where(f => f.Kind == "discover").Concat(built.Values.Where(r => r.Id.StartsWith("seerr-", StringComparison.Ordinal)).SelectMany(r => r.Items)).ToList(), dtoOptions);
             }
             catch (Exception ex)
             {
@@ -271,6 +304,22 @@ namespace ClearFrame.Services
 
             // Each title appears once, in the first row (in this TV's order) that has it.
             var seen = new HashSet<string>(StringComparer.Ordinal);
+            foreach (var f in featured)
+            {
+                // A featured title the library matched is only kept if it isn't the same title as an earlier one.
+                if (f.Keys.Any(seen.Contains))
+                {
+                    continue;
+                }
+
+                foreach (var key in f.Keys)
+                {
+                    seen.Add(key);
+                }
+
+                response.Featured.Add(f);
+            }
+
             foreach (var id in settings.RowOrder)
             {
                 if (!built.TryGetValue(id, out var row))
@@ -300,6 +349,200 @@ namespace ClearFrame.Services
             }
 
             return response;
+        }
+
+        /// <summary>
+        /// The featured mix: the title being watched most recently, the newest library additions not yet watched, and
+        /// the top of Seerr's Trending list, interleaved so the area alternates between them.
+        /// </summary>
+        private async Task<List<HomeItem>> BuildFeatured(User user, Task<List<SeerrMedia>> trendingTask, CancellationToken ct)
+        {
+            var options = new DtoOptions(true) { EnableImages = true, ImageTypeLimit = 1, EnableUserData = true };
+
+            var resume = _library.GetItemList(new InternalItemsQuery(user)
+            {
+                IsResumable = true,
+                Recursive = true,
+                IncludeItemTypes = new[] { "Movie", "Episode" },
+                OrderBy = new[] { ValueTuple.Create(ItemSortBy.DatePlayed, SortOrder.Descending) },
+                Limit = 1,
+                DtoOptions = options,
+            });
+
+            var latest = _library.GetItemList(new InternalItemsQuery(user)
+            {
+                Recursive = true,
+                IncludeItemTypes = new[] { "Movie", "Series" },
+                IsPlayed = false,
+                ImageTypes = new[] { ImageType.Backdrop },
+                // A series counts from its newest episode. (Literal, since the constant isn't in every server version.)
+                OrderBy = new[] { ValueTuple.Create("DateLastContentAdded", SortOrder.Descending) },
+                Limit = 6,
+                DtoOptions = options,
+            });
+
+            var fromResume = _dto.GetBaseItemDtos(resume, options, user).Select(d => MapFeaturedLibrary(user, d, "resume")).ToList();
+            var fromLatest = _dto.GetBaseItemDtos(latest, options, user).Select(d => MapFeaturedLibrary(user, d, "new")).ToList();
+
+            var fromTrending = new List<HomeItem>();
+            var trending = trendingTask == null ? null : await trendingTask.ConfigureAwait(false);
+            foreach (var m in (trending ?? new List<SeerrMedia>()).Where(m => !string.IsNullOrWhiteSpace(m.BackdropPath)).Take(4))
+            {
+                fromTrending.Add(await MapFeaturedSeerr(m, ct).ConfigureAwait(false));
+            }
+
+            var picks = new List<HomeItem>();
+            var keys = new HashSet<string>(StringComparer.Ordinal);
+            void Take(List<HomeItem> source)
+            {
+                foreach (var item in source)
+                {
+                    if (item.Keys.Any(keys.Contains))
+                    {
+                        continue;
+                    }
+
+                    foreach (var key in item.Keys)
+                    {
+                        keys.Add(key);
+                    }
+
+                    picks.Add(item);
+                    source.Remove(item);
+                    return;
+                }
+            }
+
+            Take(fromResume);
+            for (var round = 0; round < FeaturedCount && picks.Count < FeaturedCount; round++)
+            {
+                Take(fromTrending);
+                if (picks.Count < FeaturedCount)
+                {
+                    Take(fromLatest);
+                }
+            }
+
+            return picks;
+        }
+
+        private HomeItem MapFeaturedLibrary(User user, BaseItemDto d, string reason)
+        {
+            HomeItem item;
+            var parts = new List<string>();
+            if (d.Type == "Series")
+            {
+                item = MapLibraryFields(d, PlayAction.Play);
+                item.Kind = "series";
+                item.Subtitle = d.ProductionYear?.ToString(CultureInfo.InvariantCulture);
+                item.Keys.Add("series:" + d.Id);
+                var tmdb = TmdbId(d.ProviderIds);
+                if (tmdb != null)
+                {
+                    item.Keys.Add("tmdb:tv:" + tmdb);
+                }
+
+                // Play the next episode to watch; a show not started yet plays from the beginning.
+                if (long.TryParse(d.Id, NumberStyles.Integer, CultureInfo.InvariantCulture, out var seriesId))
+                {
+                    var next = _tv.GetNextUp(new NextUpQuery { UserId = user.InternalId, SeriesId = seriesId, Limit = 1 }, user, new DtoOptions(false))?.Items?.FirstOrDefault();
+                    if (next != null)
+                    {
+                        item.PlayItemId = next.InternalId.ToString(CultureInfo.InvariantCulture);
+                        var data = _userData.GetUserData(user, next);
+                        item.DefaultAction = data != null && data.PlaybackPositionTicks > 0 ? PlayAction.Resume : PlayAction.Play;
+                        if (next.ParentIndexNumber.HasValue && next.IndexNumber.HasValue)
+                        {
+                            parts.Add(string.Format(CultureInfo.InvariantCulture, "S{0} E{1}", next.ParentIndexNumber, next.IndexNumber));
+                        }
+                    }
+                }
+
+                if (parts.Count == 0 && d.ProductionYear.HasValue) parts.Add(d.ProductionYear.Value.ToString(CultureInfo.InvariantCulture));
+                if (!string.IsNullOrWhiteSpace(d.OfficialRating)) parts.Add(d.OfficialRating);
+                if (d.Genres != null && d.Genres.Length > 0) parts.Add(d.Genres[0]);
+                item.Tagline = First(d.Taglines);
+                item.BackdropUrl = Image(d.Id, ImageType.Backdrop, d.BackdropImageTags?.FirstOrDefault());
+                item.LogoUrl = Image(d.Id, ImageType.Logo, Tag(d, ImageType.Logo));
+            }
+            else
+            {
+                item = MapLibraryItem(d, reason == "resume" ? PlayAction.Resume : (d.UserData?.PlaybackPositionTicks > 0 ? PlayAction.Resume : PlayAction.Play));
+                if (d.Type == "Episode")
+                {
+                    if (d.ParentIndexNumber.HasValue && d.IndexNumber.HasValue)
+                    {
+                        parts.Add(string.Format(CultureInfo.InvariantCulture, "S{0} E{1}", d.ParentIndexNumber, d.IndexNumber));
+                    }
+
+                    BaseItem series = null;
+                    if (long.TryParse(d.SeriesId, NumberStyles.Integer, CultureInfo.InvariantCulture, out var seriesId))
+                    {
+                        series = _library.GetItemById(seriesId);
+                    }
+
+                    item.Tagline = series?.Tagline;
+                    item.Overview = string.IsNullOrWhiteSpace(d.Overview) ? series?.Overview : d.Overview;
+                    item.BackdropUrl = Image(d.ParentBackdropItemId, ImageType.Backdrop, d.ParentBackdropImageTags?.FirstOrDefault());
+                    item.LogoUrl = Image(d.ParentLogoItemId, ImageType.Logo, d.ParentLogoImageTag);
+                }
+                else
+                {
+                    if (d.ProductionYear.HasValue) parts.Add(d.ProductionYear.Value.ToString(CultureInfo.InvariantCulture));
+                    if (!string.IsNullOrWhiteSpace(d.OfficialRating)) parts.Add(d.OfficialRating);
+                    item.Tagline = First(d.Taglines);
+                    item.BackdropUrl = Image(d.Id, ImageType.Backdrop, d.BackdropImageTags?.FirstOrDefault());
+                    item.LogoUrl = Image(d.Id, ImageType.Logo, Tag(d, ImageType.Logo));
+                }
+
+                var left = item.PositionTicks > 0 && item.RuntimeTicks > item.PositionTicks ? item.RuntimeTicks - item.PositionTicks : null;
+                parts.Add(left.HasValue ? Duration(left.Value) + " left" : (d.RunTimeTicks > 0 ? Duration(d.RunTimeTicks.Value) : null));
+            }
+
+            item.BackdropUrl = item.BackdropUrl ?? item.LandscapeUrl;
+            item.Meta = string.Join(" · ", parts.Where(p => !string.IsNullOrWhiteSpace(p)));
+            item.FeatureReason = reason;
+            return item;
+        }
+
+        private async Task<HomeItem> MapFeaturedSeerr(SeerrMedia m, CancellationToken ct)
+        {
+            var item = MapSeerr(m);
+            item.BackdropUrl = TmdbImageBase + "w1280" + m.BackdropPath;
+            item.FeatureReason = "trending";
+            var parts = new List<string> { item.Year?.ToString(CultureInfo.InvariantCulture), m.MediaType == "tv" ? "Series" : "Movie" };
+            try
+            {
+                var details = await _seerr.Details(m.MediaType, m.Id, ct).ConfigureAwait(false);
+                item.Tagline = details?.Tagline;
+                parts.Add(details?.Genres?.Select(g => g.Name).FirstOrDefault(n => !string.IsNullOrWhiteSpace(n)));
+                if (m.MediaType == "tv" && details?.NumberOfSeasons > 0)
+                {
+                    parts.Add(details.NumberOfSeasons == 1 ? "1 season" : details.NumberOfSeasons + " seasons");
+                }
+                else if (details?.Runtime > 0)
+                {
+                    parts.Add(Duration(TimeSpan.FromMinutes(details.Runtime.Value).Ticks));
+                }
+            }
+            catch (Exception ex)
+            {
+                // Without details the title still shows, headed by its name.
+                _logger.Debug("Seerr details for {0} {1} failed: {2}", m.MediaType, m.Id, ex.Message);
+            }
+
+            item.Meta = string.Join(" · ", parts.Where(p => !string.IsNullOrWhiteSpace(p)));
+            return item;
+        }
+
+        private static string First(string[] values) => values?.FirstOrDefault(v => !string.IsNullOrWhiteSpace(v))?.Trim();
+
+        /// <summary>"2h 10m", "45m".</summary>
+        private static string Duration(long ticks)
+        {
+            var minutes = (int)Math.Round(TimeSpan.FromTicks(ticks).TotalMinutes);
+            if (minutes < 1) return null;
+            return minutes >= 60 ? (minutes / 60) + "h " + (minutes % 60) + "m" : minutes + "m";
         }
 
         /// <summary>
@@ -435,10 +678,20 @@ namespace ClearFrame.Services
             }
         }
 
+        /// <summary>
+        /// A game involving a chosen team: the listing's title or episode title must be a matchup ("A at B",
+        /// "A vs B", "League: A v B") naming the team. Descriptions aren't searched, so preview shows, highlights and
+        /// talk shows that mention a team are left out, and so are replays of old games.
+        /// </summary>
         private static bool MatchesTeam(BaseItemDto p, string[] teams)
         {
-            var haystack = string.Join(" ", p.Name, p.EpisodeTitle, p.Overview);
-            return teams.Any(t => haystack.IndexOf(t, StringComparison.OrdinalIgnoreCase) >= 0);
+            if (p.IsRepeat == true && p.IsLive != true)
+            {
+                return false;
+            }
+
+            var playing = SportsTeams.ExtractTeams(p.Name, p.EpisodeTitle, out _);
+            return playing.Any(listed => teams.Any(chosen => SportsTeams.SameTeam(listed, chosen)));
         }
 
         private static HomeItem MapLibraryItem(BaseItemDto d, string defaultAction)
@@ -451,7 +704,7 @@ namespace ClearFrame.Services
             }
 
             var tmdb = TmdbId(d.ProviderIds);
-            if (d.Type != "Episode" && tmdb != null)
+            if (d.Type == "Movie" && tmdb != null)
             {
                 item.Keys.Add("tmdb:movie:" + tmdb);
             }

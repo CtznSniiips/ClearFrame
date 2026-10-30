@@ -64,6 +64,20 @@ namespace ClearFrame.Services
         public SeerrMediaInfo MediaInfo { get; set; }
     }
 
+    public class SeerrGenre
+    {
+        public string Name { get; set; }
+    }
+
+    /// <summary>The parts of Seerr's /movie/{id} and /tv/{id} details that the featured area uses.</summary>
+    public class SeerrDetails
+    {
+        public string Tagline { get; set; }
+        public int? Runtime { get; set; }
+        public int? NumberOfSeasons { get; set; }
+        public List<SeerrGenre> Genres { get; set; }
+    }
+
     public class SeerrDiscoverPage
     {
         public int Page { get; set; }
@@ -103,6 +117,9 @@ namespace ClearFrame.Services
 
         private readonly IJsonSerializer _json;
         private readonly ILogger _logger;
+        private static readonly TimeSpan DetailsCacheLifetime = TimeSpan.FromHours(12);
+        private readonly ConcurrentDictionary<string, Tuple<DateTime, SeerrDetails>> _detailsCache =
+            new ConcurrentDictionary<string, Tuple<DateTime, SeerrDetails>>();
         private readonly ConcurrentDictionary<string, Tuple<DateTime, List<SeerrMedia>>> _discoverCache =
             new ConcurrentDictionary<string, Tuple<DateTime, List<SeerrMedia>>>();
 
@@ -162,6 +179,20 @@ namespace ClearFrame.Services
 
             _discoverCache[kind] = Tuple.Create(DateTime.UtcNow, results);
             return results;
+        }
+
+        /// <summary>Tagline, runtime and genres for one title. Cached, since they rarely change.</summary>
+        public async Task<SeerrDetails> Details(string mediaType, int tmdbId, CancellationToken ct)
+        {
+            var key = mediaType + ":" + tmdbId.ToString(System.Globalization.CultureInfo.InvariantCulture);
+            if (_detailsCache.TryGetValue(key, out var cached) && DateTime.UtcNow - cached.Item1 < DetailsCacheLifetime)
+            {
+                return cached.Item2;
+            }
+
+            var details = await Send<SeerrDetails>(HttpMethod.Get, "/api/v1/" + (mediaType == "tv" ? "tv/" : "movie/") + key.Substring(key.IndexOf(':') + 1), null, ct).ConfigureAwait(false);
+            _detailsCache[key] = Tuple.Create(DateTime.UtcNow, details);
+            return details;
         }
 
         /// <summary>Forget cached discover rows, e.g. after a request changes an item's status.</summary>
