@@ -2,6 +2,7 @@
 
 ## 0.3.0
 
+- Featured games: for the first two teams in a TV's Your Teams list, a game that's on now or starts within the hour leads the featured titles, with the matchup as its tagline, the channel logo and any programme artwork. It leaves the Your Teams row while featured.
 - `Featured`: up to five titles for the top of Home, mixing the title watched most recently, the newest unwatched library additions and the top of Seerr's Trending list. Each carries a tagline, backdrop, logo (when the library has one), a details line and the reason it was picked. Featured titles aren't repeated in the rows.
 - Your Teams only lists games: a guide listing must be a matchup ("A at B", "A vs B", "League: A v B") naming a chosen team in its title or episode title. Descriptions are no longer searched, so preview shows, highlights and talk shows that mention a team are left out, and so are replays of old games. A chosen name matches the same name or the same name with a place in front ("Maple Leafs" matches "Toronto Maple Leafs"; "Michigan" doesn't match "Michigan State").
 

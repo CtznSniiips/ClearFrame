@@ -74,7 +74,7 @@ namespace ClearFrame.Services
         /// <summary>Featured items: e.g. "2024 · PG-13 · 2h 10m" or "S1 E5 · 32 min left".</summary>
         public string Meta { get; set; }
 
-        /// <summary>Featured items: resume, new or trending.</summary>
+        /// <summary>Featured items: game, resume, new or trending.</summary>
         public string FeatureReason { get; set; }
 
         /// <summary>Identities used to show each title only once across rows. Not sent to TVs.</summary>
@@ -285,7 +285,7 @@ namespace ClearFrame.Services
             var featured = new List<HomeItem>();
             try
             {
-                featured = await BuildFeatured(user, featuredTrending, ct).ConfigureAwait(false);
+                featured = await BuildFeatured(user, tv.SportsTeams ?? new string[0], featuredTrending, ct).ConfigureAwait(false);
             }
             catch (Exception ex)
             {
@@ -352,12 +352,23 @@ namespace ClearFrame.Services
         }
 
         /// <summary>
-        /// The featured mix: the title being watched most recently, the newest library additions not yet watched, and
-        /// the top of Seerr's Trending list, interleaved so the area alternates between them.
+        /// The featured mix: games for the TV's first two teams that are on now or start within the hour (first),
+        /// then the title being watched most recently, the newest library additions not yet watched, and the top of
+        /// Seerr's Trending list, interleaved so the area alternates between them.
         /// </summary>
-        private async Task<List<HomeItem>> BuildFeatured(User user, Task<List<SeerrMedia>> trendingTask, CancellationToken ct)
+        private async Task<List<HomeItem>> BuildFeatured(User user, string[] teams, Task<List<SeerrMedia>> trendingTask, CancellationToken ct)
         {
             var options = new DtoOptions(true) { EnableImages = true, ImageTypeLimit = 1, EnableUserData = true };
+            var games = new List<HomeItem>();
+            try
+            {
+                games = FeaturedGames(user, teams, options, ct);
+            }
+            catch (Exception ex)
+            {
+                // Live TV may not be set up; the rest of the featured area still works.
+                _logger.Debug("featured games skipped: {0}", ex.Message);
+            }
 
             var resume = _library.GetItemList(new InternalItemsQuery(user)
             {
@@ -394,6 +405,13 @@ namespace ClearFrame.Services
 
             var picks = new List<HomeItem>();
             var keys = new HashSet<string>(StringComparer.Ordinal);
+            foreach (var game in games)
+            {
+                if (game.Keys.Any(keys.Contains)) continue;
+                foreach (var key in game.Keys) keys.Add(key);
+                picks.Add(game);
+            }
+
             void Take(List<HomeItem> source)
             {
                 foreach (var item in source)
@@ -414,7 +432,7 @@ namespace ClearFrame.Services
                 }
             }
 
-            Take(fromResume);
+            if (picks.Count < FeaturedCount) Take(fromResume);
             for (var round = 0; round < FeaturedCount && picks.Count < FeaturedCount; round++)
             {
                 Take(fromTrending);
@@ -425,6 +443,48 @@ namespace ClearFrame.Services
             }
 
             return picks;
+        }
+
+        /// <summary>One game for each of the first two teams, if it's on now or starts within the hour.</summary>
+        private List<HomeItem> FeaturedGames(User user, string[] teams, DtoOptions options, CancellationToken ct)
+        {
+            var games = new List<HomeItem>();
+            var chosen = teams.Where(t => !string.IsNullOrWhiteSpace(t)).Take(2).ToArray();
+            if (chosen.Length == 0)
+            {
+                return games;
+            }
+
+            var now = DateTimeOffset.UtcNow;
+            var programs = GetSportsPrograms(user, now, now.AddHours(1), options, ct);
+            foreach (var team in chosen)
+            {
+                var game = programs
+                    .Where(p => MatchesTeam(p, new[] { team }))
+                    .OrderByDescending(p => p.StartDate <= now)
+                    .ThenBy(p => p.StartDate)
+                    .FirstOrDefault();
+                if (game == null)
+                {
+                    continue;
+                }
+
+                var item = MapProgram(game);
+                if (games.Any(g => g.Keys.SequenceEqual(item.Keys)))
+                {
+                    continue;
+                }
+
+                item.FeatureReason = "game";
+                // The matchup heads the featured area; the league sits beside it, or the channel logo when there is one.
+                item.Tagline = string.IsNullOrWhiteSpace(game.EpisodeTitle) ? null : game.EpisodeTitle;
+                item.BackdropUrl = Image(game.Id, ImageType.Thumb, Tag(game, ImageType.Thumb))
+                                   ?? Image(game.Id, ImageType.Backdrop, game.BackdropImageTags?.FirstOrDefault());
+                item.LogoUrl = Image(game.ChannelId, ImageType.Primary, game.ChannelPrimaryImageTag);
+                games.Add(item);
+            }
+
+            return games;
         }
 
         private HomeItem MapFeaturedLibrary(User user, BaseItemDto d, string reason)
@@ -778,6 +838,7 @@ namespace ClearFrame.Services
                 DefaultAction = PlayAction.Play,
             };
             item.Keys.Add("program:" + p.Id);
+            item.Keys.Add("game:" + (p.Name ?? string.Empty) + "|" + (p.EpisodeTitle ?? string.Empty) + "|" + item.StartDate);
 
             if (airing && p.StartDate.HasValue && p.EndDate.HasValue)
             {
