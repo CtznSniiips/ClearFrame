@@ -1,4 +1,4 @@
-# Interaction behaviour — 0.9.0
+# Interaction behaviour — 0.9.1
 
 ## Home
 
@@ -87,6 +87,7 @@ Nothing changes until the TV is paired with the Lobby Emby plugin. An unpaired H
 - Left/Right move along a row without wrapping. Each row remembers its card, and long rows scroll to keep focus in view with the next card peeking. Back returns to the apps. Focus on a card shows its title, details and the OK action above the rows.
 - OK on a library item or Live TV programme asks the server to play, resume (from the saved position) or tune that channel, then opens the Emby app. The server delivers the command when Emby connects. A server refusal or a missing Emby app shows a message, and Emby is not opened after a refusal.
 - OK on a Seerr title that is already in the Emby library plays it like a library item: a movie resumes or plays, a show plays its next episode. A partly available title opens its request screen with Play first (focused), then Request. Other Seerr titles open the request screen: with one linked Seerr account, a single Request button; with several, one button per person, with the last requester focused. Requested and processing titles, and available titles the server couldn't find in the library, only explain their status. A Seerr refusal is shown with Try again.
+- The request screen describes the title from Seerr: year, type, runtime or seasons, genres and TMDB rating; the tagline; the overview (three lines at most); who directed and wrote a film, or created a show and where it airs; and up to seven cast members with their roles, using initials when there's no photo. Details arrive after the screen opens; the status line and buttons keep a fixed place, so focus never moves under the viewer.
 - Each title appears once on Home, in the first row (in this TV's order) that has it. A show counts as one title, so its episode in Next Up keeps it out of Trending.
 
 **Watch layout.** Settings → Layout → Watch. A newly paired TV switches to it. Until the TV is paired and the server has something to show, Watch looks and behaves like Dock, and the Layout page says why.

@@ -118,7 +118,44 @@ namespace Lobby.Api
         public int? Days { get; set; }
     }
 
+    [Route("/Lobby/Details", "GET", Summary = "Credits and details for a Seerr title, for the request screen.")]
+    [Unauthenticated]
+    public class GetTitleDetails : IReturn<TitleDetailsResponse>
+    {
+        /// <summary>movie or tv.</summary>
+        public string MediaType { get; set; }
+        public int TmdbId { get; set; }
+    }
+
     // ---- Responses ------------------------------------------------------------------------------
+
+    public class TitlePerson
+    {
+        public string Name { get; set; }
+        public string Character { get; set; }
+
+        /// <summary>Absolute TMDB image URL, when the person has a photo.</summary>
+        public string PhotoUrl { get; set; }
+    }
+
+    public class TitleDetailsResponse
+    {
+        public string Tagline { get; set; }
+        public string Overview { get; set; }
+        public List<string> Genres { get; set; } = new List<string>();
+
+        /// <summary>Minutes: a movie's runtime, or a show's usual episode length.</summary>
+        public int? RuntimeMinutes { get; set; }
+        public int? Seasons { get; set; }
+        public double? Rating { get; set; }
+        public List<string> Directors { get; set; } = new List<string>();
+        public List<string> Writers { get; set; } = new List<string>();
+        public List<string> Creators { get; set; } = new List<string>();
+        public List<string> Networks { get; set; } = new List<string>();
+
+        /// <summary>Top-billed cast, at most twelve.</summary>
+        public List<TitlePerson> Cast { get; set; } = new List<TitlePerson>();
+    }
 
     public class TvRowSetting
     {
@@ -275,6 +312,60 @@ namespace Lobby.Api
         {
             var tv = Authenticate();
             return await Runtime.Home.Build(tv, CancellationToken.None).ConfigureAwait(false);
+        }
+
+        public async Task<object> Get(GetTitleDetails request)
+        {
+            Authenticate();
+            if ((request.MediaType != "movie" && request.MediaType != "tv") || request.TmdbId <= 0)
+            {
+                throw new ArgumentException("MediaType must be 'movie' or 'tv' and TmdbId must be set.");
+            }
+
+            if (!Runtime.Seerr.IsConfigured)
+            {
+                throw new ResourceNotFoundException("Seerr isn't set up on the server.");
+            }
+
+            SeerrDetails d;
+            try
+            {
+                d = await Runtime.Seerr.Details(request.MediaType, request.TmdbId, CancellationToken.None).ConfigureAwait(false);
+            }
+            catch (SeerrException ex)
+            {
+                throw new ResourceNotFoundException(ex.Message);
+            }
+
+            const string photoBase = "https://image.tmdb.org/t/p/w185";
+            var crew = d?.Credits?.Crew ?? new List<SeerrPerson>();
+            List<string> Names(IEnumerable<SeerrPerson> people, int max) =>
+                people.Where(p => !string.IsNullOrWhiteSpace(p?.Name)).Select(p => p.Name.Trim()).Distinct().Take(max).ToList();
+
+            return new TitleDetailsResponse
+            {
+                Tagline = d?.Tagline,
+                Overview = d?.Overview,
+                Genres = (d?.Genres ?? new List<SeerrGenre>()).Where(g => !string.IsNullOrWhiteSpace(g?.Name)).Select(g => g.Name).Take(3).ToList(),
+                RuntimeMinutes = d?.Runtime > 0 ? d.Runtime : d?.EpisodeRunTime?.FirstOrDefault(m => m > 0) is int ep && ep > 0 ? ep : (int?)null,
+                Seasons = d?.NumberOfSeasons > 0 ? d.NumberOfSeasons : null,
+                Rating = d?.VoteAverage > 0 ? Math.Round(d.VoteAverage.Value, 1) : (double?)null,
+                Directors = Names(crew.Where(p => p.Job == "Director"), 3),
+                Writers = Names(crew.Where(p => p.Job == "Screenplay" || p.Job == "Writer"), 3),
+                Creators = Names(d?.CreatedBy ?? new List<SeerrPerson>(), 3),
+                Networks = (d?.Networks ?? new List<SeerrCompany>()).Where(n => !string.IsNullOrWhiteSpace(n?.Name)).Select(n => n.Name).Take(2).ToList(),
+                Cast = (d?.Credits?.Cast ?? new List<SeerrPerson>())
+                    .Where(p => !string.IsNullOrWhiteSpace(p?.Name))
+                    .OrderBy(p => p.Order ?? int.MaxValue)
+                    .Take(12)
+                    .Select(p => new TitlePerson
+                    {
+                        Name = p.Name.Trim(),
+                        Character = string.IsNullOrWhiteSpace(p.Character) ? null : p.Character.Trim(),
+                        PhotoUrl = string.IsNullOrWhiteSpace(p.ProfilePath) ? null : photoBase + p.ProfilePath,
+                    })
+                    .ToList(),
+            };
         }
 
         public async Task<object> Get(GetRequesters request)

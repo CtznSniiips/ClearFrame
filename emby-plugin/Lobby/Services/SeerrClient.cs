@@ -69,13 +69,41 @@ namespace Lobby.Services
         public string Name { get; set; }
     }
 
-    /// <summary>The parts of Seerr's /movie/{id} and /tv/{id} details that the featured area uses.</summary>
+    public class SeerrPerson
+    {
+        public string Name { get; set; }
+        public string Character { get; set; }
+        public string Job { get; set; }
+        public string ProfilePath { get; set; }
+        public int? Order { get; set; }
+    }
+
+    public class SeerrCredits
+    {
+        public List<SeerrPerson> Cast { get; set; }
+        public List<SeerrPerson> Crew { get; set; }
+    }
+
+    public class SeerrCompany
+    {
+        public string Name { get; set; }
+    }
+
+    /// <summary>The parts of Seerr's /movie/{id} and /tv/{id} details that Lobby uses.</summary>
     public class SeerrDetails
     {
         public string Tagline { get; set; }
+        public string Overview { get; set; }
         public int? Runtime { get; set; }
+        public List<int> EpisodeRunTime { get; set; }
         public int? NumberOfSeasons { get; set; }
+        public string ReleaseDate { get; set; }
+        public string FirstAirDate { get; set; }
+        public double? VoteAverage { get; set; }
         public List<SeerrGenre> Genres { get; set; }
+        public SeerrCredits Credits { get; set; }
+        public List<SeerrPerson> CreatedBy { get; set; }
+        public List<SeerrCompany> Networks { get; set; }
     }
 
     public class SeerrDiscoverPage

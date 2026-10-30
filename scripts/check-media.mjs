@@ -130,6 +130,18 @@ async function handle(route) {
   }
   if (op === '/Settings/Reset') { api.customized = false; api.hidden = []; api.order = ROWS.map(r => r.Id); api.limit = 20; return json(200, settingsJson()); }
   if (op === '/Sports/Teams') return json(200, { Days: 7, Teams: api.teamsList.map(t => ({ ...t })), Message: null });
+  if (op === '/Details') {
+    if (api.detailsDelay) await new Promise(r => setTimeout(r, api.detailsDelay));
+    const id = Number(url.searchParams.get('TmdbId'));
+    return json(200, id === 502 ? {
+      Tagline: 'Three things, one night.', Overview: 'A film about 3 things.', Genres: ['Science Fiction', 'Adventure'], RuntimeMinutes: 166, Rating: 8.16,
+      Directors: ['Denis Villeneuve'], Writers: ['Jon Spaihts', 'Denis Villeneuve'], Creators: [], Networks: [],
+      Cast: [{ Name: 'Timothée Chalamet', Character: 'Paul Atreides', PhotoUrl: 'https://image.tmdb.org/t/p/w185/tc.jpg' }, { Name: 'Zendaya', Character: 'Chani', PhotoUrl: 'https://image.tmdb.org/t/p/w185/z.jpg' },
+        { Name: 'Rebecca Ferguson', Character: 'Lady Jessica' }, { Name: 'Javier Bardem', Character: 'Stilgar', PhotoUrl: 'https://image.tmdb.org/t/p/w185/jb.jpg' },
+        { Name: 'Josh Brolin', Character: 'Gurney Halleck', PhotoUrl: 'https://image.tmdb.org/t/p/w185/jbr.jpg' }, { Name: 'Austin Butler', Character: 'Feyd-Rautha', PhotoUrl: 'https://image.tmdb.org/t/p/w185/ab.jpg' },
+        { Name: 'Florence Pugh', Character: 'Princess Irulan', PhotoUrl: 'https://image.tmdb.org/t/p/w185/fp.jpg' }, { Name: 'Dave Bautista', Character: 'Rabban', PhotoUrl: 'https://image.tmdb.org/t/p/w185/db.jpg' }]
+    } : { Genres: [], Directors: [], Writers: [], Creators: [], Networks: [], Cast: [] });
+  }
   if (op === '/Requesters') return json(200, { RequestsEnabled: api.requestsEnabled, Requesters: api.requesters, LastRequesterId: api.lastRequester, UsingFallback: false });
   if (op === '/Request') { api.requests.push(body); return json(200, api.requestStatus === 0 ? { Status: 'failed', Message: 'Request for this media already exists.' } : { Status: api.requestStatus === 2 ? 'approved' : 'requested', RequestId: 9 }); }
   if (op === '/Play') { api.plays.push(body); return json(200, api.playStatus === 'failed' ? { Status: 'failed', Message: 'This TV has no Emby app device assigned in the Lobby settings.' } : { Status: api.playStatus }); }
@@ -362,6 +374,14 @@ async function main() {
       await nav('up', 'down', 'down', 'down', 'down', 'right', 'right', 'ok');
       await until(() => ShoreQA.state().view === 'request' && document.querySelectorAll('.rq-acts .btn').length === 3);
       check('one button per person, last requester first in focus', (await where()).focusAction === 'act.as.2', await where());
+      await until(() => document.querySelectorAll('.rq-person').length > 0);
+      check('details join the year and type', (await current.locator('.rq-meta').textContent()) === '2022 · Film · 2h 46m · Science Fiction, Adventure · TMDB 8.2', await current.locator('.rq-meta').textContent());
+      check('the tagline shows', (await current.locator('.rq-tagline').textContent()) === 'Three things, one night.');
+      check('director and writers are named', (await current.locator('.rq-facts').textContent()) === 'Directed by Denis Villeneuve' + 'Written by Jon Spaihts, Denis Villeneuve', await current.locator('.rq-facts').textContent());
+      check('up to seven cast members, with their roles', (await current.locator('.rq-person').count()) === 7 && (await current.locator('.rq-person').first().textContent()) === 'Timothée ChalametPaul Atreides');
+      check('someone without a photo shows initials', (await current.locator('.rq-person').nth(2).locator('.rq-initials').textContent()) === 'RF');
+      const acts = await current.locator('.rq-acts').evaluate(e => e.getBoundingClientRect().bottom), cast = await current.locator('.rq-cast').evaluate(e => e.getBoundingClientRect().bottom), status = await current.locator('.rq-status').evaluate(e => e.getBoundingClientRect().top);
+      check('the cast sits above the status and buttons, which stay on screen', cast <= status && acts <= 1060, { cast, status, acts });
       check('people named', (await current.locator('.rq-acts').textContent()).includes('Request as Steve'));
       check('Home rows stay hidden behind the sheet', await current.evaluate(() => Array.from(document.querySelectorAll('#media .mc, #media .mr-title')).every(el => getComputedStyle(el).visibility === 'hidden')));
       await shot('request-choose');
@@ -386,6 +406,21 @@ async function main() {
       await until(() => document.querySelectorAll('.rq-acts .btn').length === 3);
       await nav('ok'); await until(() => document.querySelector('.rq-status .setting-error'));
       check('Seerr’s refusal is shown with Try again', (await current.locator('.rq-status').textContent()).includes('already exists') && (await current.evaluate(() => ShoreQA.actions())).includes('act.retry'));
+    });
+
+    await run('Request details load without moving the buttons', async () => {
+      api = freshApi({ detailsDelay: 600 }); await page({ paired: true });
+      await nav('up', 'down', 'down', 'down', 'down', 'right', 'right', 'ok');
+      await until(() => ShoreQA.state().view === 'request' && document.querySelectorAll('.rq-acts .btn').length === 3);
+      const before = await current.locator('.rq-acts').evaluate(e => e.getBoundingClientRect().top);
+      await until(() => document.querySelectorAll('.rq-person').length > 0);
+      const after = await current.locator('.rq-acts').evaluate(e => e.getBoundingClientRect().top);
+      check('the buttons keep their place when details arrive', before === after, { before, after });
+      await nav('back');
+      await nav('right', 'ok');
+      await until(() => ShoreQA.state().view === 'request' && document.querySelectorAll('.rq-acts .btn').length >= 2);
+      await current.waitForTimeout(800);
+      check('a title with no credits shows no empty cast section', await current.locator('.rq-cast.has-cast').count() === 0 && (await current.locator('.rq-facts').textContent()) === '');
     });
 
     await run('Partly available titles offer Play and Request', async () => {
