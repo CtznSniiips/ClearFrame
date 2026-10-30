@@ -1,4 +1,4 @@
-# Interaction behaviour — 0.8.0
+# Interaction behaviour — 0.8.1
 
 ## Home
 
@@ -92,9 +92,10 @@ Nothing changes until the TV is paired with the ClearFrame Emby plugin. An unpai
 **Watch layout.** Settings → Layout → Watch. A newly paired TV switches to it. Until the TV is paired and the server has something to show, Watch looks and behaves like Dock, and the Layout page says why.
 
 - Top: a rail on the left (Art Mode, All apps, Settings), the date and time on the right, and a featured title over its backdrop: a greeting, the title's tagline as the headline (its name when it has none), two lines of overview, a button named for the action (Resume, Play, Request, Watch live) with the reason and details beside it, and the title's logo, or its name, on the right. Dots show which of up to five featured titles is in view.
-- The featured mix comes from the server: the title being watched most recently, the newest library additions not yet watched, and the top of Seerr's Trending list, alternating. Titles without background art are left out. Featured titles don't appear again in the rows.
+- The featured mix comes from the server: the title being watched most recently, the newest library additions not yet watched, and the top of Seerr's Trending list, alternating. Titles without background art are left out. Featured titles don't appear again in the rows. If the server sends no featured titles (an older plugin, or nothing with background art), the TV features the first title of Continue Watching and of Next Up and the top three of Trending that have artwork, and takes them out of their rows.
 - Home starts on the featured button. Left and Right step through the featured titles (Right wraps); Left from the first one reaches the rail. Featured titles change every nine seconds while the button or rail has focus. Up and Down move along the rail; Right or Back leaves it.
-- Below are bands of rows. Continue Watching sits beside Next Up, and Trending beside Your Teams, when both have titles; otherwise a row takes the full width. Library and Live TV cards carry a title and detail line; Seerr rows are artwork tiles. The Home apps come last.
+- Below are bands of rows. Continue Watching sits beside Next Up, and Trending beside Your Teams, when both have titles; otherwise a row takes the full width. Library and Live TV cards carry a title and detail line; Seerr rows are artwork tiles.
+- The Home apps stay in a dock along the bottom of the screen, a smaller version of the Dock that follows Settings → Layout → App display. Down from the last band (or from the featured title when there are no rows) enters it; Up returns to the band last used; Left from its first app reaches the rail; OK opens the app.
 - Left/Right move along a row; Right from a row's last card moves to the row beside it, and Left from its first card back. Left from the first card of a band reaches the rail. Up and Down move between bands, keeping to the same side where they can; Up from the first band returns to the featured title. Back from any band returns to the featured title; Back there asks to leave Home.
 - While a card has focus, the top describes it: name, overview, OK action and details. A band that doesn't fit below the featured area moves up under a compact title; the bands above it and the rail fade out.
 

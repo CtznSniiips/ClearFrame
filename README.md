@@ -37,7 +37,7 @@ The glass and blur are rendered ahead of time. The TV loads the finished images 
 
 ## ClearFrame: Emby and Seerr on Home
 
-This fork adds rows from your own Emby server and Seerr to Home: Continue Watching, Next Up, On Now, games for teams you follow, and Seerr's Trending and Popular lists. OK resumes or plays in the Emby app, or requests a title in Seerr as the right person. The Watch layout puts a rotating featured title at the top, with rows below in side-by-side bands and your apps last.
+This fork adds rows from your own Emby server and Seerr to Home: Continue Watching, Next Up, On Now, games for teams you follow, and Seerr's Trending and Popular lists. OK resumes or plays in the Emby app, or requests a title in Seerr as the right person. The Watch layout puts a rotating featured title at the top, with rows below in side-by-side bands and your apps in a dock along the bottom.
 
 1. Install the ClearFrame Emby plugin from [`emby-plugin/`](emby-plugin/README.md) and set up Seerr and account links on its page.
 2. On the TV: Settings → Emby & Seerr → Connect, enter the server address and approve the code on the plugin page.

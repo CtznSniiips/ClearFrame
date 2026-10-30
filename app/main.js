@@ -85,11 +85,11 @@
   /* ClearFrame: Emby and Seerr rows from the paired server. Absent until the owner pairs this TV,
      so an unpaired Home is unchanged. */
   var Media = window.ClearFrameMedia;
-  var W = { i: 0, timer: 0, src: null, back: 0, pre: null, preImg: null, apps: { i: 0, first: 0 } };
+  var W = { i: 0, timer: 0, src: null, back: 0, pre: null, preImg: null, band: 0, side: 0 };
   var M = { cfg: null, data: null, rows: [], loading: false, error: null, at: 0, request: 0, unauthorized: false,
     featured: [], cols: {}, row: 0, settings: null, settingsLoading: false, settingsError: null, saving: null, note: null, timer: 0 };
   var MEDIA_KINDS = ['movie', 'episode', 'series', 'program', 'discover'];
-  var REASON_NAMES = { resume: 'Continue watching', 'new': 'New in your library', trending: 'Trending' };
+  var REASON_NAMES = { resume: 'Continue watching', nextup: 'Up next', 'new': 'New in your library', trending: 'Trending' };
   var STATUS_NAMES = { available: 'Available', partial: 'Partly available', processing: 'Processing', requested: 'Requested' };
   var SOURCE_NAMES = { library: 'From your Emby library', livetv: 'From Emby Live TV', seerr: 'From Seerr' };
   var REFRESH_MS = 5 * 60000;
@@ -113,7 +113,31 @@
     });
   }
   /* Rows and featured titles always change together. */
-  function setHome(data) { M.rows = data ? cleanRows(data) : []; M.featured = data ? cleanFeatured(data) : []; W.i = clamp(W.i, 0, Math.max(0, M.featured.length - 1)); }
+  function setHome(data) {
+    M.rows = data ? cleanRows(data) : []; M.featured = data ? cleanFeatured(data) : [];
+    if (!M.featured.length) pickFeatured();
+    W.i = clamp(W.i, 0, Math.max(0, M.featured.length - 1));
+  }
+  /* When the server sends no featured titles (an older plugin, or none with background art), take
+     them from the rows: the first of Continue Watching and Next Up, then the top of Trending.
+     They leave their rows, so each title still appears once. */
+  function pickFeatured() {
+    var picks = [], from = [['continue', 1, 'resume'], ['nextup', 1, 'nextup'], ['seerr-trending', 3, 'trending']];
+    from.forEach(function (source) {
+      var row = M.rows.filter(function (r) { return r.id === source[0]; })[0], taken = 0;
+      if (!row) return;
+      row.items = row.items.filter(function (it) {
+        if (taken >= source[1] || picks.length >= 5 || !it.landscape) return true;
+        it.reason = source[2];
+        // Seerr art comes as a small TMDB backdrop; the featured area wants the larger one.
+        it.backdrop = it.landscape.replace(/^(https:\/\/image\.tmdb\.org\/t\/p\/)w\d+\//, '$1w1280/');
+        picks.push(it); taken++;
+        return false;
+      });
+    });
+    M.rows = M.rows.filter(function (r) { return r.items.length > 0; });
+    M.featured = picks;
+  }
   function cleanRows(data) {
     return (data && Array.isArray(data.Rows) ? data.Rows : []).slice(0, 12).map(function (r) {
       var seen = {}, items = (r && Array.isArray(r.Items) ? r.Items : []).slice(0, 100).map(cleanItem).filter(function (it) {
@@ -1461,7 +1485,7 @@
   var photoMode = null, photoTransitionToken = 0;
   var sheetEl = $('sheet'), sheetView = $('sheetView');
   var watchEl = $('watch'), wHeroEl = $('wHero'), wTopEl = $('wTop'), wRailEl = $('wRail'), wInfoEl = $('wInfo'), wArtEl = $('wArt'), wDotsEl = $('wDots'), wBandsEl = $('wBands');
-  var wBacks = [$('wBackA'), $('wBackB')];
+  var wBacks = [$('wBackA'), $('wBackB')], wDockEl = $('wDock');
   var mediaEl = $('media'), mediaInfo = $('mediaInfo'), mediaView = $('mediaView'), mediaRowsEl = $('mediaRows'), mediaScrim = $('mediaScrim');
   var IMG = { photo: $('photo'), mat: $('matImg'), bg: $('sheetBg'), field: $('phFieldImg'), fieldAlt: $('phFieldImgAlt'), utility: $('utFieldImg'), utilityAlt: $('utFieldImgAlt') };
   var sheetKey = '', slotEls = {}, dockEdgeFrame = 0, dockEdgeUntil = 0, dockAnchorCenter = 960;
@@ -1748,8 +1772,8 @@
   var W_PAIRS = { 'continue': 'nextup', nextup: 'continue', 'seerr-trending': 'sports', sports: 'seerr-trending' };
   var W_LEFT = { 'continue': true, 'seerr-trending': true };
   var W_RAIL = ['art', 'apps', 'settings'], W_ZONES = ['wrail', 'whero', 'wband', 'wapps'];
-  var WG = { x: 72, width: 1776, half: 864, gap: 48, hero: 452, slot: 336, title: 42, after: 22, labels: 60, bottom: 1056,
-    tile: { w: 240, h: 135, pitch: 254 }, card: { w: 256, h: 144, pitch: 272 }, app: { w: 156, h: 88, pitch: 172 } };
+  var WG = { x: 72, width: 1776, half: 864, gap: 48, hero: 452, slot: 336, title: 42, after: 22, labels: 60, bottom: 924,
+    tile: { w: 240, h: 135, pitch: 254 }, card: { w: 256, h: 144, pitch: 272 }, app: { w: 168, h: 96, pitch: 176 } };
   var DAYS = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'], MONTHS = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
   /* Seerr rows are artwork only, as tiles; library and Live TV rows carry a title and detail line. */
   function wStyle(row) { return row.id.indexOf('seerr-') === 0 ? 'tile' : 'card'; }
@@ -1765,9 +1789,8 @@
       rows = !mate ? [row] : W_LEFT[row.id] ? [row, mate] : [mate, row];
       bands.push({ key: rows.map(function (r) { return r.id; }).join('+'), kind: 'rows', rows: rows });
     });
-    if (S.c.home.length) bands.push({ key: 'apps', kind: 'apps', rows: [] });
     bands.forEach(function (band) {
-      band.h = WG.title + WG.after + (band.kind === 'apps' ? WG.app.h : Math.max.apply(null, band.rows.map(function (row) { var st = wStyle(row); return WG[st].h + (st === 'card' ? WG.labels : 0); })));
+      band.h = WG.title + WG.after + (Math.max.apply(null, band.rows.map(function (row) { var st = wStyle(row); return WG[st].h + (st === 'card' ? WG.labels : 0); })));
     });
     return bands;
   }
@@ -1782,26 +1805,21 @@
   }
   function greeting() { var h = new Date().getHours(); return h < 5 ? 'Good evening' : h < 12 ? 'Good morning' : h < 18 ? 'Good afternoon' : 'Good evening'; }
   function wDateText() { var d = new Date(); return DAYS[d.getDay()] + ', ' + MONTHS[d.getMonth()] + ' ' + d.getDate(); }
-  function wTop(f) { if (M.featured.length) f.zone = 'whero'; else { f.zone = 'wrail'; f.u = clamp(S.lastUtil, 0, W_RAIL.length - 1); } }
+  function wTop(f) { if (M.featured.length) f.zone = 'whero'; else if (wBands().length) wEnterBand(f, wBands(), 0, 0); else wRail(f); }
+  function wDock(f) { if (S.c.home.length) { f.zone = 'wapps'; f.a = clamp(f.a || 0, 0, S.c.home.length - 1); } }
   function wRail(f) { f.zone = 'wrail'; f.u = clamp(S.lastUtil, 0, W_RAIL.length - 1); }
   function wEnterBand(f, bands, b, s) {
-    var band = bands[b];
-    f.b = b;
-    if (band.kind === 'apps') { f.zone = 'wapps'; f.a = clamp(f.a || 0, 0, S.c.home.length - 1); }
-    else { f.zone = 'wband'; f.s = clamp(s || 0, 0, band.rows.length - 1); }
+    f.b = b; f.zone = 'wband'; f.s = clamp(s || 0, 0, bands[b].rows.length - 1);
   }
   function wShow(i) { W.i = clamp(i, 0, Math.max(0, M.featured.length - 1)); }
   function watchNorm(t) {
-    var f = t.f, bands = wBands(), band;
-    if (W_ZONES.indexOf(f.zone) < 0) { if (M.featured.length) f.zone = 'whero'; else if (bands.length) wEnterBand(f, bands, 0, 0); else wRail(f); }
-    if (f.zone === 'whero' && !M.featured.length) { if (bands.length) wEnterBand(f, bands, 0, 0); else wRail(f); }
-    if (f.zone === 'wband' || f.zone === 'wapps') {
-      if (!bands.length) { wRail(f); return; }
-      f.b = clamp(f.zone === 'wapps' ? bands.length - 1 : f.b || 0, 0, bands.length - 1);
-      band = bands[f.b];
-      if (band.kind === 'apps') { f.zone = 'wapps'; f.a = clamp(f.a || 0, 0, S.c.home.length - 1); }
-      else { f.zone = 'wband'; f.s = clamp(f.s || 0, 0, band.rows.length - 1); }
+    var f = t.f, bands = wBands();
+    if (W_ZONES.indexOf(f.zone) < 0 || (f.zone === 'whero' && !M.featured.length)) wTop(f);
+    if (f.zone === 'wband') {
+      if (!bands.length) { wTop(f); if (f.zone === 'wband') wDock(f); }
+      else { f.b = clamp(f.b || 0, 0, bands.length - 1); f.s = clamp(f.s || 0, 0, bands[f.b].rows.length - 1); }
     }
+    if (f.zone === 'wapps') { if (S.c.home.length) f.a = clamp(f.a || 0, 0, S.c.home.length - 1); else wTop(f); }
     if (f.zone === 'wrail') f.u = clamp(f.u || 0, 0, W_RAIL.length - 1);
     W.i = clamp(W.i, 0, Math.max(0, M.featured.length - 1));
   }
@@ -1810,7 +1828,7 @@
     if (f.zone === 'wrail') {
       if (k === 'up' && f.u > 0) f.u--;
       else if (k === 'down' && f.u < W_RAIL.length - 1) f.u++;
-      else if (k === 'right' || k === 'back') { if (M.featured.length) f.zone = 'whero'; else if (bands.length) wEnterBand(f, bands, 0, 0); }
+      else if (k === 'right' || k === 'back') wTop(f);
       else if (k === 'ok') { S.lastUtil = f.u; utilAction(W_RAIL[f.u]); return; }
       S.lastUtil = f.u;
       return;
@@ -1819,7 +1837,7 @@
       // Left and Right step through the featured titles; Left from the first one reaches the rail.
       if (k === 'left') { if (W.i > 0) wShow(W.i - 1); else wRail(f); }
       else if (k === 'right') wShow((W.i + 1) % M.featured.length);
-      else if (k === 'down' && bands.length) wEnterBand(f, bands, 0, 0);
+      else if (k === 'down') { if (bands.length) wEnterBand(f, bands, 0, 0); else wDock(f); }
       else if (k === 'back') openMessage('leave');
       else if (k === 'ok') mediaOk(M.featured[W.i]);
       return;
@@ -1827,7 +1845,8 @@
     if (f.zone === 'wapps') {
       if (k === 'left') { if (f.a > 0) f.a--; else wRail(f); }
       else if (k === 'right' && f.a < S.c.home.length - 1) f.a++;
-      else if (k === 'up') { if (f.b > 0) wEnterBand(f, bands, f.b - 1, 0); else wTop(f); }
+      // Up returns to the band last used, or the top when there are no rows.
+      else if (k === 'up') { if (bands.length) wEnterBand(f, bands, clamp(W.band, 0, bands.length - 1), W.side); else if (M.featured.length) f.zone = 'whero'; else wRail(f); }
       else if (k === 'back') wTop(f);
       else if (k === 'ok') { setSel(S.c.home[f.a]); launch(S.c.home[f.a]); }
       return;
@@ -1837,7 +1856,7 @@
     if (k === 'left') { if (c.i > 0) c.i--; else if (f.s > 0) f.s--; else wRail(f); }
     else if (k === 'right') { if (c.i < row.items.length - 1) c.i++; else if (f.s < band.rows.length - 1) f.s++; }
     else if (k === 'up') { if (f.b > 0) wEnterBand(f, bands, f.b - 1, f.s); else wTop(f); }
-    else if (k === 'down') { if (f.b < bands.length - 1) wEnterBand(f, bands, f.b + 1, f.s); }
+    else if (k === 'down') { if (f.b < bands.length - 1) wEnterBand(f, bands, f.b + 1, f.s); else { W.band = f.b; W.side = f.s; wDock(f); } }
     else if (k === 'back') wTop(f);
     else if (k === 'ok') mediaOk(row.items[c.i]);
   }
@@ -1850,7 +1869,7 @@
       band = bands[Math.floor(i / 10000)];
       if (!band || !band.rows[Math.floor(i / 1000) % 10]) return;
       f.zone = 'wband'; f.b = Math.floor(i / 10000); f.s = Math.floor(i / 1000) % 10; mediaCol(band.rows[f.s]).i = i % 1000;
-    } else if (z === 'wapp') { f.zone = 'wapps'; f.b = bands.length - 1; f.a = i; }
+    } else if (z === 'wapp') { f.zone = 'wapps'; f.a = i; }
     else return;
     watchKey(t, 'ok');
   }
@@ -1892,7 +1911,7 @@
         + '<div class="wi-act"><span class="wi-hint"><span class="remote-key">OK</span><span>' + esc(mediaVerb(it)) + '</span></span>' + (meta ? '<span class="wi-meta">' + esc(meta) + '</span>' : '') + '</div>';
     } else {
       head = it.tagline || it.title; verb = mediaVerb(it);
-      meta = [REASON_NAMES[it.reason] || '', it.meta].filter(function (p) { return !!p; }).join(' · ');
+      meta = [REASON_NAMES[it.reason] || '', it.meta || mediaMeta(it)].filter(function (p) { return !!p; }).join(' · ');
       html = '<p class="wi-greet">' + esc(greeting()) + '</p><h2 class="wi-head">' + esc(head) + '</h2>'
         + (it.overview ? '<p class="wi-body">' + esc(it.overview) + '</p>' : '')
         + '<div class="wi-act"><span class="wi-btn' + (live && zone === 'whero' ? ' is-focus' : '') + '" role="button" data-z="whero" data-i="0" data-action="watch.featured.' + esc(it.id) + '" aria-label="' + esc(verb + ' ' + it.title) + '">' + esc(verb) + '</span>'
@@ -1940,29 +1959,29 @@
       attrs(card, 'wcard', b * 10000 + s * 1000 + i, 'media.' + row.id + '.' + item.id);
     });
   }
-  function renderWatchApps(el, b, focus) {
-    var size = WG.app, f = top().f, c = W.apps, win, trackEl;
-    c.i = focus ? f.a : c.i;
-    win = wWindow(c, S.c.home.length, size, WG.width);
-    if (!el._frame) { el.innerHTML = '<h3 class="wr-title">Apps</h3><div class="wr-clip"><div class="wr-track"></div></div>'; el._frame = 1; }
-    el.className = 'wrow wrow-apps' + (focus ? ' is-active' : '');
-    trackEl = el.lastChild.firstChild;
-    el.lastChild.style.width = (WG.width + 32) + 'px'; el.lastChild.style.height = (size.h + 32) + 'px';
-    trackEl.style.transform = 'translate3d(' + (-win.first * size.pitch) + 'px,0,0)';
-    keyed(trackEl, S.c.home.map(function (id, i) { return { key: id, id: id, i: i }; }), function (tile, te) {
-      var a = app(te.id);
-      setContent(tile, te.id + '|' + S.c.bg, function () { return a ? appMark(a, size.w - 40, size.h - 28, 52) : ''; });
-      tile.className = 'wapp' + (focus && te.i === f.a ? ' is-focus' : '');
-      tile.style.transform = 'translate3d(' + (te.i * size.pitch) + 'px,0,0)';
-      tile.style.visibility = te.i >= win.first - 1 && te.i <= win.first + win.vis ? '' : 'hidden';
-      tile.setAttribute('role', 'button'); tile.setAttribute('aria-label', a ? a.name : te.id);
+  /* The Home apps, always at the bottom: a smaller version of the Dock that follows App display. */
+  function renderWatchDock(zone) {
+    var n = S.c.home.length, size = WG.app, f = top().f, width = n * size.pitch - (size.pitch - size.w) + 24;
+    wDockEl.className = 'w-dock a-' + S.c.apps + (n ? ' is-on' : '') + (zone === 'wapps' ? ' is-active' : '');
+    wDockEl.style.width = width + 'px'; wDockEl.style.left = Math.round((1920 - width) / 2) + 'px';
+    keyed(wDockEl, S.c.home.map(function (id, i) { return { key: id, id: id, i: i }; }), function (tile, te) {
+      var a = app(te.id), name = a ? a.name : te.id;
+      setContent(tile, te.id + '|' + S.c.apps + '|' + S.c.bg, function () {
+        return (S.c.apps !== 'text' && a ? '<span class="wapp-mark">' + appMark(a, 112, S.c.apps === 'icons' ? 56 : 44, S.c.apps === 'icons' ? 52 : 40) + '</span>' : '')
+          + (S.c.apps !== 'icons' ? '<span class="wapp-name">' + esc(name) + '</span>' : '');
+      });
+      tile.className = 'wapp' + (zone === 'wapps' && te.i === f.a ? ' is-focus' : '');
+      tile.style.transform = 'translate3d(' + (12 + te.i * size.pitch) + 'px,0,0)';
+      tile.setAttribute('role', 'button'); tile.setAttribute('aria-label', name);
       attrs(tile, 'wapp', te.i, 'home.app.' + te.id);
     });
   }
   function renderWatch(t) {
     var live = t.id === 'home', f = t.f, zone = live ? f.zone : '', bands = wBands(), ys = [], y = 0, shift = 0, fb = -1, row, focusItem = null, it;
     bands.forEach(function (band) { ys.push(y); y += band.h; });
-    if (zone === 'wband' || zone === 'wapps') {
+    renderWatchDock(zone);
+    if (zone === 'wband') {
+      W.band = f.b; W.side = f.s;
       fb = clamp(f.b, 0, bands.length - 1);
       // A band that doesn't fit below the featured area moves up to a slot under a compact title.
       if (WG.hero + ys[fb] + bands[fb].h - WG.after > WG.bottom) shift = WG.hero + ys[fb] - WG.slot;
@@ -1982,7 +2001,6 @@
       var band = e.band, b = e.b, bandTop = WG.hero - shift + ys[b], visible = bandTop < 1080 && bandTop + band.h > 0;
       el.className = 'wband' + (b === fb ? ' is-active' : '') + (shift > 0 && b < fb ? ' is-past' : '');
       el.style.transform = 'translate3d(0,' + ys[b] + 'px,0)';
-      if (band.kind === 'apps') { renderWatchApps(el, b, zone === 'wapps'); return; }
       keyed(el, band.rows.map(function (r, s) { return { key: r.id, row: r, s: s }; }), function (rel, re) {
         renderWatchRow(rel, re.row, b, re.s, band.rows.length > 1 ? WG.half : WG.width, zone === 'wband' && b === fb && f.s === re.s, visible);
       });
