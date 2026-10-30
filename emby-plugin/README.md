@@ -13,7 +13,7 @@ Tested on Emby Server **4.10.2.0**. CI also builds against 4.9.1.90.
 
 ## Install
 
-1. Download `Lobby.dll` from the latest [release](https://github.com/CtznSniiips/ClearFrame/releases) tagged `emby-plugin-v…`. For an unreleased build, use the artifact `Lobby-emby-4.10.2.0` from the latest **Emby plugin** workflow run.
+1. Download `Lobby.dll` from the latest [release](https://github.com/CtznSniiips/Lobby/releases) tagged `emby-plugin-v…`. For an unreleased build, use the artifact `Lobby-emby-4.10.2.0` from the latest **Emby plugin** workflow run.
 2. Copy it into your Emby `plugins` folder, e.g. `/config/plugins` in the Docker container or `programdata/plugins`.
 3. If you used it under its old name, delete `ClearFrame.dll` from the plugins folder and `ClearFrame.xml` from `plugins/configuration`. Lobby keeps its own settings, so set up Seerr and pair each TV again.
 4. Restart Emby.

@@ -17,8 +17,8 @@ I highly recommend forking it and building on top of it, ideally with a coding a
 You need Node.js 22.13+ (22 LTS), or 24+, and Python 3.10+ to run the browser preview.
 
 ```sh
-git clone https://github.com/CtznSniiips/ClearFrame.git
-cd ClearFrame
+git clone https://github.com/CtznSniiips/Lobby.git
+cd Lobby
 npm ci
 npm run dev:public
 ```
