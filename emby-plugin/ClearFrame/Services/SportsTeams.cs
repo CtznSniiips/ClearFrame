@@ -90,6 +90,32 @@ namespace ClearFrame.Services
             return new List<string>();
         }
 
+        /// <summary>
+        /// True when a team named in a listing is one the TV chose: the same name, or the same name with a place in
+        /// front ("Leafs" and "Maple Leafs" match "Toronto Maple Leafs"). Other partial matches are refused, so
+        /// "Michigan" doesn't match "Michigan State" and "Kings" doesn't match "Kingston Frontenacs".
+        /// </summary>
+        public static bool SameTeam(string listed, string chosen)
+        {
+            if (string.IsNullOrWhiteSpace(listed) || string.IsNullOrWhiteSpace(chosen))
+            {
+                return false;
+            }
+
+            listed = Regex.Replace(listed.Trim(), @"\s+", " ");
+            chosen = Regex.Replace(chosen.Trim(), @"\s+", " ");
+            return string.Equals(listed, chosen, StringComparison.OrdinalIgnoreCase)
+                || EndsWithWords(listed, chosen)
+                || EndsWithWords(chosen, listed);
+        }
+
+        private static bool EndsWithWords(string text, string words)
+        {
+            return text.Length > words.Length
+                && text.EndsWith(words, StringComparison.OrdinalIgnoreCase)
+                && text[text.Length - words.Length - 1] == ' ';
+        }
+
         /// <summary>Teams across many listings, merged case-insensitively and grouped by league.</summary>
         public static List<GuideTeam> Collect(IEnumerable<Tuple<string, string, DateTimeOffset?>> listings, IEnumerable<string> selected)
         {

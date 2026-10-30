@@ -34,7 +34,8 @@
     { id: '60', name: 'Every hour', min: 60 }
   ];
   var KEY = 'cleanframe.home.v1', storageOk = true, catalog = { loading: false, loaded: false, error: null, request: 0, revision: 0 };
-  var QA = window.ShoreQA = { minuteMs: window.ShoreQA && window.ShoreQA.minuteMs || 60000, pollMs: window.ShoreQA && window.ShoreQA.pollMs || 3000, staleMs: window.ShoreQA && window.ShoreQA.staleMs || 30000 };
+  var QA = window.ShoreQA = { minuteMs: window.ShoreQA && window.ShoreQA.minuteMs || 60000, pollMs: window.ShoreQA && window.ShoreQA.pollMs || 3000, staleMs: window.ShoreQA && window.ShoreQA.staleMs || 30000,
+    featureMs: window.ShoreQA && window.ShoreQA.featureMs || 9000 };
   var FONTS = {
     manrope: { name: 'Manrope', family: 'Manrope', display: 600, ui: 500, clock: 500 },
     montreal: { name: 'Neue Montreal', family: 'Study Montreal', display: 300, ui: 400, clock: 300 },
@@ -44,9 +45,9 @@
     newsreader: { name: 'Newsreader', family: 'Study Newsreader', display: 400, ui: 400, clock: 400 }
   };
   var PRIVATE_FONTS = window.CleanFramePrivateFontIDs || [], fontMetrics = {}, unavailableFonts = {}, widthCache = {}, fontRevision = 0, fontsReady = false;
-  var LOOK_VALUES = { bg: ['dark', 'light', 'photo'], layout: ['list', 'dock'], apps: ['icons', 'both', 'text'], font: Object.keys(FONTS).filter(function (id) { return id === 'manrope' || PRIVATE_FONTS.indexOf(id) >= 0; }), controls: ['icons', 'both', 'text'], focus: ['type', 'glass'], material: ['soft', 'frost', 'tint'] };
+  var LOOK_VALUES = { bg: ['dark', 'light', 'photo'], layout: ['list', 'dock', 'watch'], apps: ['icons', 'both', 'text'], font: Object.keys(FONTS).filter(function (id) { return id === 'manrope' || PRIVATE_FONTS.indexOf(id) >= 0; }), controls: ['icons', 'both', 'text'], focus: ['type', 'glass'], material: ['soft', 'frost', 'tint'] };
   var LOOK_NAMES = { bg: 'Background', layout: 'Layout', apps: 'Apps', font: 'Font', controls: 'Home controls', focus: 'Focus', material: 'Material' };
-  var VALUE_NAMES = { dark: 'Dark', light: 'Light', photo: 'Photo', list: 'List', dock: 'Dock', type: 'Type', glass: 'Glass', soft: 'Soft', frost: 'Frost', tint: 'Clear tint', icons: 'Icons', both: 'Icons and text', text: 'Text' };
+  var VALUE_NAMES = { dark: 'Dark', light: 'Light', photo: 'Photo', list: 'List', dock: 'Dock', watch: 'Watch', type: 'Type', glass: 'Glass', soft: 'Soft', frost: 'Frost', tint: 'Clear tint', icons: 'Icons', both: 'Icons and text', text: 'Text' };
   var UTIL = { art: ['Art Mode', 'art'], apps: ['All apps', 'apps'], arrange: ['Arrange', 'arrange'], settings: ['Settings', 'settings'] };
   var MSG = {
     leave: { title: 'Leave Home?', line: 'Open Samsung Home?', note: '', actions: [['stay', 'Stay'], ['samsung', 'Samsung Home']] }
@@ -84,9 +85,11 @@
   /* ClearFrame: Emby and Seerr rows from the paired server. Absent until the owner pairs this TV,
      so an unpaired Home is unchanged. */
   var Media = window.ClearFrameMedia;
+  var W = { i: 0, timer: 0, src: null, back: 0, pre: null, preImg: null, apps: { i: 0, first: 0 } };
   var M = { cfg: null, data: null, rows: [], loading: false, error: null, at: 0, request: 0, unauthorized: false,
-    cols: {}, row: 0, settings: null, settingsLoading: false, settingsError: null, saving: null, note: null, timer: 0 };
-  var MEDIA_KINDS = ['movie', 'episode', 'program', 'discover'];
+    featured: [], cols: {}, row: 0, settings: null, settingsLoading: false, settingsError: null, saving: null, note: null, timer: 0 };
+  var MEDIA_KINDS = ['movie', 'episode', 'series', 'program', 'discover'];
+  var REASON_NAMES = { resume: 'Continue watching', 'new': 'New in your library', trending: 'Trending' };
   var STATUS_NAMES = { available: 'Available', partial: 'Partly available', processing: 'Processing', requested: 'Requested' };
   var SOURCE_NAMES = { library: 'From your Emby library', livetv: 'From Emby Live TV', seerr: 'From Seerr' };
   var REFRESH_MS = 5 * 60000;
@@ -100,8 +103,17 @@
       playId: text(it.PlayItemId, 40), action: it.DefaultAction === 'resume' ? 'resume' : it.DefaultAction === 'request' ? 'request' : 'play',
       channel: text(it.ChannelName, 80), start: text(it.StartDate, 40), airing: it.IsAiring === true,
       tmdb: count(it.TmdbId) || 0, mediaType: it.MediaType === 'tv' ? 'tv' : it.MediaType === 'movie' ? 'movie' : '', status: STATUS_NAMES[it.RequestStatus] ? it.RequestStatus : 'none',
-      playAction: it.PlayAction === 'resume' ? 'resume' : 'play' };
+      playAction: it.PlayAction === 'resume' ? 'resume' : 'play',
+      tagline: text(it.Tagline, 160), backdrop: text(it.BackdropUrl, 800), logo: text(it.LogoUrl, 800), meta: text(it.Meta, 120), reason: REASON_NAMES[it.FeatureReason] ? it.FeatureReason : '' };
   }
+  function cleanFeatured(data) {
+    var seen = {};
+    return (data && Array.isArray(data.Featured) ? data.Featured : []).slice(0, 8).map(cleanItem).filter(function (it) {
+      if (!it || !it.id || seen[it.id] || !(it.backdrop || it.landscape)) return false; seen[it.id] = true; return true;
+    });
+  }
+  /* Rows and featured titles always change together. */
+  function setHome(data) { M.rows = data ? cleanRows(data) : []; M.featured = data ? cleanFeatured(data) : []; W.i = clamp(W.i, 0, Math.max(0, M.featured.length - 1)); }
   function cleanRows(data) {
     return (data && Array.isArray(data.Rows) ? data.Rows : []).slice(0, 12).map(function (r) {
       var seen = {}, items = (r && Array.isArray(r.Items) ? r.Items : []).slice(0, 100).map(cleanItem).filter(function (it) {
@@ -124,7 +136,10 @@
     return fallback;
   }
   function lookOf(c) { return { bg: c.bg, wall: c.wall, layout: c.layout, apps: c.apps, font: c.font, controls: c.controls, focus: c.focus, material: c.material }; }
-  function materialApplies(c) { c = c || S.c; return c.bg === 'photo' && (c.layout === 'dock' || c.focus === 'glass'); }
+  function materialApplies(c) { c = c || S.c; return c.bg === 'photo' && (c.layout !== 'list' || c.focus === 'glass'); }
+  /* Watch needs the paired server; until it has something to show, Home falls back to Dock. */
+  function watchOn() { return S.c.layout === 'watch' && !!M.cfg && !M.unauthorized && (M.rows.length > 0 || M.featured.length > 0); }
+  function layoutNow() { return S.c.layout === 'watch' ? (watchOn() ? 'watch' : 'dock') : S.c.layout; }
 
   /* ---------- Helpers ---------- */
   function app(id) { for (var i = 0; i < APPS.length; i++) if (APPS[i].id === id) return APPS[i]; return null; }
@@ -573,11 +588,14 @@
   /* ---------- Home (browse) ---------- */
   V.home = {
     norm: function (t) {
+      if (layoutNow() === 'watch') { watchNorm(t); return; }
+      if (W_ZONES.indexOf(t.f.zone) >= 0) t.f.zone = 'apps';
       if (t.f.zone === 'media' && !mediaOn()) t.f.zone = 'apps';
       if (mediaOn()) t.f.mr = clamp(t.f.mr || 0, 0, M.rows.length - 1);
     },
     key: function (t, k) {
       var f = t.f, h = S.c.home, U = utils(), x = axes(), i = ensureSel();
+      if (layoutNow() === 'watch') { watchKey(t, k); return; }
       if (f.zone === 'media') { mediaKey(t, k); return; }
       if (S.c.layout === 'list') { listHomeKey(t, k, i, U); return; }
       if (f.zone === 'util') {
@@ -600,6 +618,7 @@
       else if (k === 'ok') launch(S.sel);
     },
     point: function (t, z, i) {
+      if (layoutNow() === 'watch') { watchPoint(t, z, i); return; }
       if (z === 'util') { t.f.zone = 'util'; t.f.u = i; S.lastUtil = i; }
       else if (z === 'media' && M.rows[Math.floor(i / 1000)]) { enterMedia(t.f, Math.floor(i / 1000)); mediaCol(M.rows[t.f.mr]).i = i % 1000; }
       else if (z === 'app') { t.f.zone = 'apps'; setSel(S.c.home[i]); }
@@ -670,7 +689,7 @@
     var request;
     clearTimeout(M.timer); M.timer = 0;
     M.cfg = Media.config();
-    if (!M.cfg) { M.rows = []; M.data = null; return; }
+    if (!M.cfg) { setHome(null); M.data = null; return; }
     if (M.loading || (!force && Date.now() - M.at < QA.staleMs)) { scheduleMedia(); return; }
     request = ++M.request; M.loading = true;
     Media.home(function (err, data) {
@@ -678,9 +697,9 @@
       M.loading = false; M.at = Date.now();
       if (err) {
         M.error = err;
-        if (err.code === 'unauthorized') { M.unauthorized = true; M.rows = []; }
+        if (err.code === 'unauthorized') { M.unauthorized = true; setHome(null); }
       } else {
-        M.error = null; M.unauthorized = false; M.data = data; M.rows = cleanRows(data);
+        M.error = null; M.unauthorized = false; M.data = data; setHome(data);
       }
       scheduleMedia(); norm(); render();
     });
@@ -968,7 +987,8 @@
       { id: 'rotation', title: 'Rotation', items: [{ action: 'background.rotation', label: mode().name, disabled: flat }], reason: flat ? 'Choose Photo to use wallpaper and rotation.' : '' }
     ];
     if (t.group === 'layout') return [
-      { id: 'layout', title: 'Layout', horizontal: true, items: options('layout', ['list', 'dock']) },
+      { id: 'layout', title: 'Layout', horizontal: true, items: options('layout', ['list', 'dock', 'watch']),
+        reason: S.c.layout === 'watch' && !watchOn() ? 'Watch shows your Emby and Seerr titles. Until this TV is connected in Settings → Emby & Seerr, Home uses Dock.' : '' },
       { id: 'apps', title: 'App display', horizontal: true, items: options('apps', ['text', 'icons', 'both']) },
       { id: 'controls', title: 'Home controls', horizontal: true, items: options('controls', ['text', 'icons', 'both']) }
     ];
@@ -1183,7 +1203,8 @@
         if (err || !s) { pollPairing(t, token); return; }
         if (s.Status === 'approved' && s.Token) {
           if (!Media.save(t.url, String(s.Token), text(s.TvName, 80))) { connectFail(t, 'This TV couldn’t save the connection. Try again.'); render(); return; }
-          M.cfg = Media.config(); M.unauthorized = false; M.rows = []; M.data = null; M.cols = {}; M.row = 0; M.settings = null;
+          M.cfg = Media.config(); M.unauthorized = false; setHome(null); M.data = null; M.cols = {}; M.row = 0; M.settings = null;
+          if (S.c.layout !== 'watch') setLook({ layout: 'watch' }, { row: 'layout' });
           t.tvName = text(s.TvName, 80); t.step = 'done'; t.f.b = 0;
           refreshMedia(true); render(); return;
         }
@@ -1382,7 +1403,7 @@
   }
   function disconnectMedia() {
     Media.forget();
-    M.cfg = null; M.rows = []; M.data = null; M.settings = null; M.cols = {}; M.row = 0; M.unauthorized = false; M.request++; M.loading = false;
+    M.cfg = null; setHome(null); M.data = null; M.settings = null; M.cols = {}; M.row = 0; M.unauthorized = false; M.request++; M.loading = false;
     clearTimeout(M.timer);
     while (top().id !== 'settings' && S.stack.length > 1) pop();
     S.stack[0].f.zone = 'apps';
@@ -1439,6 +1460,8 @@
   var utPlates = [$('utLens'), $('utLensAlt')], utFields = [$('utField'), $('utFieldAlt')], utPlateIndex = 0, utPlateKey = null;
   var photoMode = null, photoTransitionToken = 0;
   var sheetEl = $('sheet'), sheetView = $('sheetView');
+  var watchEl = $('watch'), wHeroEl = $('wHero'), wTopEl = $('wTop'), wRailEl = $('wRail'), wInfoEl = $('wInfo'), wArtEl = $('wArt'), wDotsEl = $('wDots'), wBandsEl = $('wBands');
+  var wBacks = [$('wBackA'), $('wBackB')];
   var mediaEl = $('media'), mediaInfo = $('mediaInfo'), mediaView = $('mediaView'), mediaRowsEl = $('mediaRows'), mediaScrim = $('mediaScrim');
   var IMG = { photo: $('photo'), mat: $('matImg'), bg: $('sheetBg'), field: $('phFieldImg'), fieldAlt: $('phFieldImgAlt'), utility: $('utFieldImg'), utilityAlt: $('utFieldImgAlt') };
   var sheetKey = '', slotEls = {}, dockEdgeFrame = 0, dockEdgeUntil = 0, dockAnchorCenter = 960;
@@ -1472,7 +1495,7 @@
   function render() {
     var t = top(), sheet = !!V[t.id].sheet, shown = wall(S.shown ? S.shown.wall : S.c.wall), palette = ADAPTIVE_INK[shown.id];
     var adaptive = applyAdaptiveInk(palette), tr = adaptive && palette.tr ? palette.tr.pol : shown.ut.tr, br = adaptive && palette.br ? palette.br.pol : shown.ut.br;
-    stage.className = 'stage bg-' + S.c.bg + ' l-' + S.c.layout + ' v-' + S.variant + ' m-' + (materialApplies() ? S.c.material : 'none') + ' f-' + S.c.focus + ' a-' + S.c.apps + ' u-' + S.c.controls + ' g-' + S.geom + ' tone-' + shown.tone + ' tr-' + tr + ' br-' + br + wallClasses(shown) + inkRungClasses(palette, adaptive) + ' at-' + t.id + ' font-' + homeFont() + (homeFont() !== 'manrope' ? ' font-custom' : '') + (S.fontSwitch ? ' is-font-switch' : '') + (adaptive ? ' has-adaptive-ink adaptive-tl-' + palette.tl.pol : '') + (!adaptive && shown.clockInk ? ' has-clock-ink' : '') + (!adaptive && shown.dockClockInk ? ' has-dock-clock-ink' : '') + (registeredMaterial(shown.id) ? ' registered-material' : '') + (sheet ? ' is-sheet' : '') + (S.reflow ? ' is-reflow' : '');
+    stage.className = 'stage bg-' + S.c.bg + ' l-' + layoutNow() + ' v-' + S.variant + ' m-' + (materialApplies() ? S.c.material : 'none') + ' f-' + S.c.focus + ' a-' + S.c.apps + ' u-' + S.c.controls + ' g-' + S.geom + ' tone-' + shown.tone + ' tr-' + tr + ' br-' + br + wallClasses(shown) + inkRungClasses(palette, adaptive) + ' at-' + t.id + ' font-' + homeFont() + (homeFont() !== 'manrope' ? ' font-custom' : '') + (S.fontSwitch ? ' is-font-switch' : '') + (adaptive ? ' has-adaptive-ink adaptive-tl-' + palette.tl.pol : '') + (!adaptive && shown.clockInk ? ' has-clock-ink' : '') + (!adaptive && shown.dockClockInk ? ' has-dock-clock-ink' : '') + (registeredMaterial(shown.id) ? ' registered-material' : '') + (sheet ? ' is-sheet' : '') + (S.reflow ? ' is-reflow' : '');
     if (!adaptive && shown.clockInk) stage.style.setProperty('--clock-ink', shown.clockInk);
     else stage.style.removeProperty('--clock-ink');
     if (!adaptive && shown.dockClockInk) stage.style.setProperty('--dock-clock-ink', shown.dockClockInk);
@@ -1502,6 +1525,8 @@
 
   function renderHome(t) {
     var hs = homeState(t);
+    watchEl.className = 'watch' + (layoutNow() === 'watch' ? ' is-on' : '');
+    if (layoutNow() === 'watch') { renderWatch(t); return; }
     renderCaption(t, hs);
     renderUtils(hs);
     if (S.c.layout === 'list') renderList(hs);
@@ -1716,6 +1741,254 @@
     setHTML(mediaInfo, info);
   }
 
+  /* ---------- Watch layout ----------
+     Rail (Art Mode, All apps, Settings) and a featured title at the top, then bands of rows:
+     paired rows share a band side by side, and the Home apps come last. While a row has focus,
+     the top area describes the focused title instead of the featured one. */
+  var W_PAIRS = { 'continue': 'nextup', nextup: 'continue', 'seerr-trending': 'sports', sports: 'seerr-trending' };
+  var W_LEFT = { 'continue': true, 'seerr-trending': true };
+  var W_RAIL = ['art', 'apps', 'settings'], W_ZONES = ['wrail', 'whero', 'wband', 'wapps'];
+  var WG = { x: 72, width: 1776, half: 864, gap: 48, hero: 452, slot: 336, title: 42, after: 22, labels: 60, bottom: 1056,
+    tile: { w: 240, h: 135, pitch: 254 }, card: { w: 256, h: 144, pitch: 272 }, app: { w: 156, h: 88, pitch: 172 } };
+  var DAYS = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'], MONTHS = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
+  /* Seerr rows are artwork only, as tiles; library and Live TV rows carry a title and detail line. */
+  function wStyle(row) { return row.id.indexOf('seerr-') === 0 ? 'tile' : 'card'; }
+  function wBands() {
+    var bands = [], used = {};
+    M.rows.forEach(function (row) {
+      var mate, rows;
+      if (used[row.id]) return;
+      used[row.id] = true;
+      mate = W_PAIRS[row.id] ? M.rows.filter(function (r) { return r.id === W_PAIRS[row.id] && !used[r.id]; })[0] : null;
+      if (mate) used[mate.id] = true;
+      // Continue Watching sits left of Next Up, and Trending left of Your Teams, whichever comes first.
+      rows = !mate ? [row] : W_LEFT[row.id] ? [row, mate] : [mate, row];
+      bands.push({ key: rows.map(function (r) { return r.id; }).join('+'), kind: 'rows', rows: rows });
+    });
+    if (S.c.home.length) bands.push({ key: 'apps', kind: 'apps', rows: [] });
+    bands.forEach(function (band) {
+      band.h = WG.title + WG.after + (band.kind === 'apps' ? WG.app.h : Math.max.apply(null, band.rows.map(function (row) { var st = wStyle(row); return WG[st].h + (st === 'card' ? WG.labels : 0); })));
+    });
+    return bands;
+  }
+  function wWindow(c, n, size, width) {
+    var vis = Math.max(1, Math.floor((width - size.w) / size.pitch) + 1);
+    c.i = clamp(c.i, 0, Math.max(0, n - 1));
+    if (c.i < c.first + (c.first > 0 ? 1 : 0)) c.first = Math.max(0, c.i - 1);
+    if (vis > 2 && c.i > c.first + vis - 2) c.first = c.i - vis + 2;
+    else if (vis <= 2 && c.i > c.first + vis - 1) c.first = c.i - vis + 1;
+    c.first = clamp(c.first, 0, Math.max(0, n - vis));
+    return { first: c.first, vis: vis };
+  }
+  function greeting() { var h = new Date().getHours(); return h < 5 ? 'Good evening' : h < 12 ? 'Good morning' : h < 18 ? 'Good afternoon' : 'Good evening'; }
+  function wDateText() { var d = new Date(); return DAYS[d.getDay()] + ', ' + MONTHS[d.getMonth()] + ' ' + d.getDate(); }
+  function wTop(f) { if (M.featured.length) f.zone = 'whero'; else { f.zone = 'wrail'; f.u = clamp(S.lastUtil, 0, W_RAIL.length - 1); } }
+  function wRail(f) { f.zone = 'wrail'; f.u = clamp(S.lastUtil, 0, W_RAIL.length - 1); }
+  function wEnterBand(f, bands, b, s) {
+    var band = bands[b];
+    f.b = b;
+    if (band.kind === 'apps') { f.zone = 'wapps'; f.a = clamp(f.a || 0, 0, S.c.home.length - 1); }
+    else { f.zone = 'wband'; f.s = clamp(s || 0, 0, band.rows.length - 1); }
+  }
+  function wShow(i) { W.i = clamp(i, 0, Math.max(0, M.featured.length - 1)); }
+  function watchNorm(t) {
+    var f = t.f, bands = wBands(), band;
+    if (W_ZONES.indexOf(f.zone) < 0) { if (M.featured.length) f.zone = 'whero'; else if (bands.length) wEnterBand(f, bands, 0, 0); else wRail(f); }
+    if (f.zone === 'whero' && !M.featured.length) { if (bands.length) wEnterBand(f, bands, 0, 0); else wRail(f); }
+    if (f.zone === 'wband' || f.zone === 'wapps') {
+      if (!bands.length) { wRail(f); return; }
+      f.b = clamp(f.zone === 'wapps' ? bands.length - 1 : f.b || 0, 0, bands.length - 1);
+      band = bands[f.b];
+      if (band.kind === 'apps') { f.zone = 'wapps'; f.a = clamp(f.a || 0, 0, S.c.home.length - 1); }
+      else { f.zone = 'wband'; f.s = clamp(f.s || 0, 0, band.rows.length - 1); }
+    }
+    if (f.zone === 'wrail') f.u = clamp(f.u || 0, 0, W_RAIL.length - 1);
+    W.i = clamp(W.i, 0, Math.max(0, M.featured.length - 1));
+  }
+  function watchKey(t, k) {
+    var f = t.f, bands = wBands(), band, row, c;
+    if (f.zone === 'wrail') {
+      if (k === 'up' && f.u > 0) f.u--;
+      else if (k === 'down' && f.u < W_RAIL.length - 1) f.u++;
+      else if (k === 'right' || k === 'back') { if (M.featured.length) f.zone = 'whero'; else if (bands.length) wEnterBand(f, bands, 0, 0); }
+      else if (k === 'ok') { S.lastUtil = f.u; utilAction(W_RAIL[f.u]); return; }
+      S.lastUtil = f.u;
+      return;
+    }
+    if (f.zone === 'whero') {
+      // Left and Right step through the featured titles; Left from the first one reaches the rail.
+      if (k === 'left') { if (W.i > 0) wShow(W.i - 1); else wRail(f); }
+      else if (k === 'right') wShow((W.i + 1) % M.featured.length);
+      else if (k === 'down' && bands.length) wEnterBand(f, bands, 0, 0);
+      else if (k === 'back') openMessage('leave');
+      else if (k === 'ok') mediaOk(M.featured[W.i]);
+      return;
+    }
+    if (f.zone === 'wapps') {
+      if (k === 'left') { if (f.a > 0) f.a--; else wRail(f); }
+      else if (k === 'right' && f.a < S.c.home.length - 1) f.a++;
+      else if (k === 'up') { if (f.b > 0) wEnterBand(f, bands, f.b - 1, 0); else wTop(f); }
+      else if (k === 'back') wTop(f);
+      else if (k === 'ok') { setSel(S.c.home[f.a]); launch(S.c.home[f.a]); }
+      return;
+    }
+    band = bands[f.b]; row = band.rows[f.s]; c = mediaCol(row);
+    c.i = clamp(c.i, 0, row.items.length - 1);
+    if (k === 'left') { if (c.i > 0) c.i--; else if (f.s > 0) f.s--; else wRail(f); }
+    else if (k === 'right') { if (c.i < row.items.length - 1) c.i++; else if (f.s < band.rows.length - 1) f.s++; }
+    else if (k === 'up') { if (f.b > 0) wEnterBand(f, bands, f.b - 1, f.s); else wTop(f); }
+    else if (k === 'down') { if (f.b < bands.length - 1) wEnterBand(f, bands, f.b + 1, f.s); }
+    else if (k === 'back') wTop(f);
+    else if (k === 'ok') mediaOk(row.items[c.i]);
+  }
+  function watchPoint(t, z, i) {
+    var f = t.f, bands = wBands(), band;
+    if (z === 'wrail') { f.zone = 'wrail'; f.u = i; S.lastUtil = i; }
+    else if (z === 'whero') f.zone = 'whero';
+    else if (z === 'wdot') { f.zone = 'whero'; wShow(i); return; }
+    else if (z === 'wcard') {
+      band = bands[Math.floor(i / 10000)];
+      if (!band || !band.rows[Math.floor(i / 1000) % 10]) return;
+      f.zone = 'wband'; f.b = Math.floor(i / 10000); f.s = Math.floor(i / 1000) % 10; mediaCol(band.rows[f.s]).i = i % 1000;
+    } else if (z === 'wapp') { f.zone = 'wapps'; f.b = bands.length - 1; f.a = i; }
+    else return;
+    watchKey(t, 'ok');
+  }
+  /* Featured titles change every few seconds while the top area has focus and nothing else is open. */
+  function syncWatch() {
+    var t = top();
+    clearTimeout(W.timer); W.timer = 0;
+    if (document.hidden || layoutNow() !== 'watch' || t.id !== 'home' || M.featured.length < 2 || (t.f.zone !== 'whero' && t.f.zone !== 'wrail')) return;
+    W.timer = setTimeout(function () { W.timer = 0; wShow((W.i + 1) % M.featured.length); render(); syncWatch(); }, QA.featureMs);
+  }
+  function wBackdrop(src) {
+    var next, cur;
+    if (W.src === src) return;
+    W.src = src; cur = wBacks[W.back]; next = wBacks[1 - W.back];
+    if (!src) { cur.className = 'w-backdrop'; next.className = 'w-backdrop'; return; }
+    function show() { if (W.src !== src) return; W.back = 1 - W.back; next.className = 'w-backdrop is-on'; cur.className = 'w-backdrop'; }
+    next.onload = show;
+    next.onerror = function () { if (W.src === src) cur.className = 'w-backdrop'; };
+    if (next._src === src && next.complete && next.naturalWidth) show();
+    else { next._src = src; next.src = src; }
+  }
+  function wPreload(src) { if (src && W.pre !== src) { W.pre = src; W.preImg = new Image(); W.preImg.src = src; } }
+  function wArtSrc(it) { return Media.image(it.backdrop || it.landscape, 1920); }
+  function renderWatchRail(zone, live) {
+    setHTML(wRailEl, W_RAIL.map(function (u, i) {
+      var on = live && zone === 'wrail' && i === clamp(top().f.u, 0, W_RAIL.length - 1);
+      return '<button type="button" tabindex="-1" class="wr-btn' + (on ? ' is-focus' : '') + '" data-z="wrail" data-i="' + i + '" data-action="util.' + u + '" aria-label="' + esc(UTIL[u][0]) + '">'
+        + icon(UTIL[u][1]) + '<span class="wr-label">' + esc(UTIL[u][0]) + '</span></button>';
+    }).join(''));
+  }
+  function renderWatchHero(zone, live, it, inRow, shift) {
+    var meta, verb, head, art = '', html;
+    wHeroEl.className = 'w-hero' + (inRow ? ' is-browsing' : '') + (zone === 'wrail' ? ' is-rail' : '');
+    if (!it) { setHTML(wInfoEl, '<p class="wi-greet">' + esc(greeting()) + '</p>'); setHTML(wArtEl, ''); setHTML(wDotsEl, ''); wBackdrop(''); return; }
+    if (inRow) {
+      meta = mediaMeta(it);
+      html = '<p class="wi-greet">' + esc(greeting()) + '</p><h2 class="wi-head is-title">' + esc(it.title) + '</h2>'
+        + (it.overview ? '<p class="wi-body">' + esc(it.overview) + '</p>' : '')
+        + '<div class="wi-act"><span class="wi-hint"><span class="remote-key">OK</span><span>' + esc(mediaVerb(it)) + '</span></span>' + (meta ? '<span class="wi-meta">' + esc(meta) + '</span>' : '') + '</div>';
+    } else {
+      head = it.tagline || it.title; verb = mediaVerb(it);
+      meta = [REASON_NAMES[it.reason] || '', it.meta].filter(function (p) { return !!p; }).join(' · ');
+      html = '<p class="wi-greet">' + esc(greeting()) + '</p><h2 class="wi-head">' + esc(head) + '</h2>'
+        + (it.overview ? '<p class="wi-body">' + esc(it.overview) + '</p>' : '')
+        + '<div class="wi-act"><span class="wi-btn' + (live && zone === 'whero' ? ' is-focus' : '') + '" role="button" data-z="whero" data-i="0" data-action="watch.featured.' + esc(it.id) + '" aria-label="' + esc(verb + ' ' + it.title) + '">' + esc(verb) + '</span>'
+        + (meta ? '<span class="wi-meta">' + esc(meta) + '</span>' : '') + '</div>';
+      if (it.logo) art = '<img class="wa-logo" alt="' + esc(it.title) + '" src="' + esc(Media.image(it.logo, 640)) + '">';
+      else if (it.tagline) art = '<span class="wa-title">' + esc(it.title) + '</span>';
+    }
+    setHTML(wInfoEl, html);
+    setHTML(wArtEl, art);
+    Array.prototype.forEach.call(wArtEl.querySelectorAll('img'), function (img) {
+      if (img.complete && img.naturalWidth) img.className = 'wa-logo is-loaded';
+      else { img.onload = function () { this.className = 'wa-logo is-loaded'; }; img.onerror = function () { this.style.display = 'none'; }; }
+    });
+    setHTML(wDotsEl, M.featured.length > 1 ? M.featured.map(function (f, i) { return '<span class="wd' + (i === W.i ? ' is-on' : '') + '" data-z="wdot" data-i="' + i + '" aria-hidden="true"></span>'; }).join('') : '');
+  }
+  function wCardHtml(it, row) {
+    var style = wStyle(row), sub = mediaMeta(it);
+    return mediaCardHtml(it, row) + (style === 'card' ? '<span class="wc-label"><span class="wc-title">' + esc(it.title) + '</span>' + (sub ? '<span class="wc-sub">' + esc(sub) + '</span>' : '') + '</span>' : '');
+  }
+  function renderWatchRow(el, row, b, s, width, focusRow, visible) {
+    var style = wStyle(row), size = WG[style], c = mediaCol(row), win = wWindow(c, row.items.length, size, width), clip, trackEl;
+    if (!el._frame) { el.innerHTML = '<h3 class="wr-title"></h3><div class="wr-clip"><div class="wr-track"></div></div>'; el._frame = 1; }
+    el.className = 'wrow wrow-' + style + (focusRow ? ' is-active' : '');
+    el.style.transform = 'translate3d(' + (s * (WG.half + WG.gap)) + 'px,0,0)';
+    setHTML(el.firstChild, esc(row.title));
+    clip = el.lastChild; trackEl = clip.firstChild;
+    clip.style.width = (width + 32) + 'px'; clip.style.height = (size.h + (style === 'card' ? WG.labels : 0) + 32) + 'px';
+    trackEl.style.transform = 'translate3d(' + (-win.first * size.pitch) + 'px,0,0)';
+    keyed(trackEl, row.items.map(function (item, i) { return { key: item.id, item: item, i: i }; }), function (card, ce) {
+      var item = ce.item, i = ce.i, isFocus = focusRow && i === c.i, near = visible && i >= win.first - 1 && i <= win.first + win.vis + 1, img;
+      var src = near ? Media.image(style === 'tile' ? item.landscape || item.poster : item.landscape || item.poster, Math.round(size.w * 1.5)) : '';
+      setContent(card, [item.id, item.status, item.progress, item.airing, item.title, item.subtitle, style].join('|'), function () { return wCardHtml(item, row); });
+      img = card.querySelector('img');
+      if (src && img._src !== src) {
+        img._src = src; img.className = '';
+        img.onload = function () { this.className = 'is-loaded'; };
+        img.onerror = function () { this.className = 'is-missing'; };
+        img.src = src;
+      }
+      card.className = 'mc wc' + (isFocus ? ' is-focus' : '');
+      card.style.width = size.w + 'px'; card.style.height = size.h + 'px';
+      card.style.transform = 'translate3d(' + (i * size.pitch) + 'px,0,0)';
+      card.style.visibility = i >= win.first - 1 && i <= win.first + win.vis ? '' : 'hidden';
+      card.setAttribute('role', 'button'); card.setAttribute('aria-label', item.title);
+      attrs(card, 'wcard', b * 10000 + s * 1000 + i, 'media.' + row.id + '.' + item.id);
+    });
+  }
+  function renderWatchApps(el, b, focus) {
+    var size = WG.app, f = top().f, c = W.apps, win, trackEl;
+    c.i = focus ? f.a : c.i;
+    win = wWindow(c, S.c.home.length, size, WG.width);
+    if (!el._frame) { el.innerHTML = '<h3 class="wr-title">Apps</h3><div class="wr-clip"><div class="wr-track"></div></div>'; el._frame = 1; }
+    el.className = 'wrow wrow-apps' + (focus ? ' is-active' : '');
+    trackEl = el.lastChild.firstChild;
+    el.lastChild.style.width = (WG.width + 32) + 'px'; el.lastChild.style.height = (size.h + 32) + 'px';
+    trackEl.style.transform = 'translate3d(' + (-win.first * size.pitch) + 'px,0,0)';
+    keyed(trackEl, S.c.home.map(function (id, i) { return { key: id, id: id, i: i }; }), function (tile, te) {
+      var a = app(te.id);
+      setContent(tile, te.id + '|' + S.c.bg, function () { return a ? appMark(a, size.w - 40, size.h - 28, 52) : ''; });
+      tile.className = 'wapp' + (focus && te.i === f.a ? ' is-focus' : '');
+      tile.style.transform = 'translate3d(' + (te.i * size.pitch) + 'px,0,0)';
+      tile.style.visibility = te.i >= win.first - 1 && te.i <= win.first + win.vis ? '' : 'hidden';
+      tile.setAttribute('role', 'button'); tile.setAttribute('aria-label', a ? a.name : te.id);
+      attrs(tile, 'wapp', te.i, 'home.app.' + te.id);
+    });
+  }
+  function renderWatch(t) {
+    var live = t.id === 'home', f = t.f, zone = live ? f.zone : '', bands = wBands(), ys = [], y = 0, shift = 0, fb = -1, row, focusItem = null, it;
+    bands.forEach(function (band) { ys.push(y); y += band.h; });
+    if (zone === 'wband' || zone === 'wapps') {
+      fb = clamp(f.b, 0, bands.length - 1);
+      // A band that doesn't fit below the featured area moves up to a slot under a compact title.
+      if (WG.hero + ys[fb] + bands[fb].h - WG.after > WG.bottom) shift = WG.hero + ys[fb] - WG.slot;
+      if (zone === 'wband') { row = bands[fb].rows[f.s]; focusItem = row ? row.items[mediaCol(row).i] : null; }
+    }
+    it = focusItem || M.featured[W.i] || null;
+    setHTML(wTopEl, '<span>' + esc(wDateText()) + '</span><span class="wt-time">' + esc(clockText() + (new Date().getHours() < 12 ? ' AM' : ' PM')) + '</span>');
+    watchEl.className = 'watch is-on' + (focusItem ? ' is-browsing' : '') + (shift > 0 ? ' is-scrolled' : '');
+    renderWatchRail(zone, live);
+    renderWatchHero(zone, live, it, !!focusItem, shift);
+    if (M.featured.length) {
+      wBackdrop(wArtSrc(M.featured[W.i]));
+      if (M.featured.length > 1) wPreload(wArtSrc(M.featured[(W.i + 1) % M.featured.length]));
+    } else wBackdrop('');
+    wBandsEl.style.transform = 'translate3d(0,' + (WG.hero - shift) + 'px,0)';
+    keyed(wBandsEl, bands.map(function (band, b) { return { key: band.key, band: band, b: b }; }), function (el, e) {
+      var band = e.band, b = e.b, bandTop = WG.hero - shift + ys[b], visible = bandTop < 1080 && bandTop + band.h > 0;
+      el.className = 'wband' + (b === fb ? ' is-active' : '') + (shift > 0 && b < fb ? ' is-past' : '');
+      el.style.transform = 'translate3d(0,' + ys[b] + 'px,0)';
+      if (band.kind === 'apps') { renderWatchApps(el, b, zone === 'wapps'); return; }
+      keyed(el, band.rows.map(function (r, s) { return { key: r.id, row: r, s: s }; }), function (rel, re) {
+        renderWatchRow(rel, re.row, b, re.s, band.rows.length > 1 ? WG.half : WG.width, zone === 'wband' && b === fb && f.s === re.s, visible);
+      });
+    });
+  }
+
   function dockGeom(n) {
     var m = DOCK_MODES[S.c.apps], vis = Math.max(1, Math.min(5, n)), shelfW = vis * m.pitch - 8, w = shelfW + 32;
     var broad = S.geom === 'broad' && n > 5;
@@ -1751,7 +2024,7 @@
   /* A wide label can reach the shelf before its icon. Check the rendered icon box,
      including during the track's 180ms transition, so both disappear together. */
   function syncDockEdges() {
-    var broad = S.c.layout === 'dock' && S.geom === 'broad', clip = shelf.getBoundingClientRect(), changes = [];
+    var broad = layoutNow() === 'dock' && S.geom === 'broad', clip = shelf.getBoundingClientRect(), changes = [];
     Array.prototype.forEach.call(track.querySelectorAll('.tile'), function (tile) {
       var content = tile.querySelector(S.c.apps === 'text' ? '.label-ink' : '.mark'), r = content ? content.getBoundingClientRect() : null;
       var outside = broad && r && (r.right <= clip.left || r.left >= clip.right);
@@ -1762,7 +2035,7 @@
   }
   function trackDockEdges() {
     dockEdgeFrame = 0;
-    if (S.c.layout !== 'dock' || S.geom !== 'broad') return;
+    if (layoutNow() !== 'dock' || S.geom !== 'broad') return;
     syncDockEdges();
     if (Date.now() < dockEdgeUntil) dockEdgeFrame = window.requestAnimationFrame(trackDockEdges);
   }
@@ -2417,6 +2690,7 @@
   }
   function resetRotation() { pauseRotation(); activeMs = 0; rotationKey = ''; }
   function syncRotation() {
+    syncWatch();
     var key = S.c.wall + '|' + S.c.mode;
     pauseRotation();
     if (key !== rotationKey) { activeMs = 0; rotationKey = key; }
@@ -2430,7 +2704,7 @@
   function updateClock() {
     clearTimeout(clockTimer);
     if (document.hidden) return;
-    if (top().id === 'home' || isSettingsDetail(top())) renderCaption(top(), homeState(top()));
+    if (top().id === 'home' || isSettingsDetail(top())) { if (layoutNow() === 'watch') renderWatch(top()); else renderCaption(top(), homeState(top())); }
     clockTimer = setTimeout(updateClock, 60000 - (Date.now() % 60000) + 30);
   }
   function focusStage() { try { stage.focus({ preventScroll: true }); } catch (e) { stage.focus(); } }
@@ -2518,7 +2792,7 @@
   window.addEventListener('focus', function () { release(); focusStage(); after(); updateClock(); });
   document.addEventListener('visibilitychange', function () {
     heldKeys = {};
-    if (document.hidden) { pauseRotation(); clearTimeout(clockTimer); clearTimeout(M.timer); }
+    if (document.hidden) { pauseRotation(); clearTimeout(clockTimer); clearTimeout(M.timer); clearTimeout(W.timer); W.timer = 0; }
     else {
       release();
       refreshMedia(false);
@@ -2545,7 +2819,9 @@
       queuedApplying: !!t.applyPending, applyPending: t.applyPending, failed: t.failedId, zone: t.f.zone, top: t.top, visible: WALL_VISIBLE, backdrop: IMG.bg.src } : null;
     out.undo = S.undo.map(function (u) { return u.label; }); out.storageOk = storageOk;
     out.media = { paired: !!M.cfg, unauthorized: M.unauthorized, loading: M.loading, rows: M.rows.map(function (r) { return { id: r.id, items: r.items.map(function (it) { return it.id; }), focus: mediaCol(r).i }; }),
-      row: t.id === 'home' && t.f.zone === 'media' ? M.rows[t.f.mr] && M.rows[t.f.mr].id : null, settings: M.settings, saving: M.saving, note: M.note, step: t.step || null };
+      row: t.id === 'home' && t.f.zone === 'media' ? M.rows[t.f.mr] && M.rows[t.f.mr].id : null,
+      layout: layoutNow(), featured: M.featured.map(function (it) { return it.id; }), featuredIndex: W.i, zone: t.id === 'home' ? t.f.zone : null,
+      bands: layoutNow() === 'watch' ? wBands().map(function (b) { return b.key; }) : [], settings: M.settings, saving: M.saving, note: M.note, step: t.step || null };
     return JSON.parse(JSON.stringify(out));
   };
   QA.where = function () {
@@ -2565,7 +2841,7 @@
   cueL.innerHTML = icon('left'); cueR.innerHTML = icon('right');
   initialise();
   M.cfg = Media.config();
-  if (M.cfg) { M.rows = cleanRows(Media.cachedHome()); refreshMedia(true); }
+  if (M.cfg) { setHome(Media.cachedHome()); refreshMedia(true); }
   setLook({}, { transient: true, startup: true });
   norm(); render(); fit(); focusStage(); updateClock(); syncRotation();
 })();
