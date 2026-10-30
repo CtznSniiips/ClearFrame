@@ -4,13 +4,13 @@ using System.Collections.Generic;
 using System.Linq;
 using System.Threading;
 using System.Threading.Tasks;
-using ClearFrame.Configuration;
+using Lobby.Configuration;
 using MediaBrowser.Controller.Library;
 using MediaBrowser.Controller.Session;
 using MediaBrowser.Model.Logging;
 using MediaBrowser.Model.Session;
 
-namespace ClearFrame.Services
+namespace Lobby.Services
 {
     public static class PlayAction
     {
@@ -51,7 +51,7 @@ namespace ClearFrame.Services
 
     /// <summary>
     /// Delivers play/resume/details commands to the Emby app on a TV.
-    /// ClearFrame calls the server, then launches Emby; this class waits for the Emby app's session to
+    /// Lobby calls the server, then launches Emby; this class waits for the Emby app's session to
     /// become controllable (or uses it straight away if it is already running) and sends the command.
     /// </summary>
     public class PlaybackDispatcher : IDisposable

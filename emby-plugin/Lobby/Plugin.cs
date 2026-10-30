@@ -1,18 +1,18 @@
 using System;
 using System.Collections.Generic;
 using System.IO;
-using ClearFrame.Configuration;
+using Lobby.Configuration;
 using MediaBrowser.Common.Configuration;
 using MediaBrowser.Common.Plugins;
 using MediaBrowser.Model.Drawing;
 using MediaBrowser.Model.Plugins;
 using MediaBrowser.Model.Serialization;
 
-namespace ClearFrame
+namespace Lobby
 {
     public class Plugin : BasePlugin<PluginConfiguration>, IHasWebPages, IHasThumbImage
     {
-        public static readonly Guid PluginId = new Guid("53466c82-3729-46c2-bc83-27a549151940");
+        public static readonly Guid PluginId = new Guid("5af002f7-cede-48af-8901-0bae7eec0e4d");
 
         /// <summary>Guards read-modify-write of <see cref="PluginConfiguration"/>.</summary>
         public static readonly object ConfigLock = new object();
@@ -25,10 +25,10 @@ namespace ClearFrame
 
         public static Plugin Instance { get; private set; }
 
-        public override string Name => "ClearFrame";
+        public override string Name => "Lobby";
 
         public override string Description =>
-            "Home screen backend for the ClearFrame Samsung TV app: Continue Watching, Next Up, Live TV and sports, " +
+            "Home screen backend for the Lobby Samsung TV app: Continue Watching, Next Up, Live TV and sports, " +
             "Seerr discovery and requests, and one-press playback on paired TVs.";
 
         public override Guid Id => PluginId;
@@ -47,14 +47,14 @@ namespace ClearFrame
             {
                 new PluginPageInfo
                 {
-                    Name = "clearframe",
-                    EmbeddedResourcePath = GetType().Namespace + ".Web.clearframe.html",
+                    Name = "lobby",
+                    EmbeddedResourcePath = GetType().Namespace + ".Web.lobby.html",
                     IsMainConfigPage = true,
                 },
                 new PluginPageInfo
                 {
-                    Name = "clearframejs",
-                    EmbeddedResourcePath = GetType().Namespace + ".Web.clearframe.js",
+                    Name = "lobbyjs",
+                    EmbeddedResourcePath = GetType().Namespace + ".Web.lobby.js",
                 },
             };
         }

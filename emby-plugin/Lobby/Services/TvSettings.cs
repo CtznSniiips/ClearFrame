@@ -1,9 +1,9 @@
 using System;
 using System.Collections.Generic;
 using System.Linq;
-using ClearFrame.Configuration;
+using Lobby.Configuration;
 
-namespace ClearFrame.Services
+namespace Lobby.Services
 {
     /// <summary>A home row the TV can show, hide and reorder.</summary>
     public class RowDefinition

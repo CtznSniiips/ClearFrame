@@ -1,12 +1,12 @@
 <?xml version="1.0" encoding="UTF-8"?>
-<widget xmlns="http://www.w3.org/ns/widgets" xmlns:tizen="http://tizen.org/ns/widgets" id="https://local.frame-home/app" version="0.8.3" viewmodes="maximized">
+<widget xmlns="http://www.w3.org/ns/widgets" xmlns:tizen="http://tizen.org/ns/widgets" id="https://local.frame-home/app" version="0.9.0" viewmodes="maximized">
   <tizen:application id="nClrkHome1.FrameHome" package="nClrkHome1" required_version="6.5"/>
   <content src="index.html"/>
-  <name>CleanFrame</name>
+  <name>Lobby</name>
   <icon src="icon.png"/>
   <feature name="http://tizen.org/feature/screen.size.normal.1080.1920"/>
   <tizen:profile name="tv-samsung"/>
-  <!-- ClearFrame: the paired Emby server (any LAN address the owner enters) and TMDB posters. -->
+  <!-- Lobby: the paired Emby server (any LAN address the owner enters) and TMDB posters. -->
   <access origin="*" subdomains="true"/>
   <tizen:privilege name="http://tizen.org/privilege/internet"/>
   <tizen:privilege name="http://developer.samsung.com/privilege/productinfo"/>

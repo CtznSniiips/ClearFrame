@@ -1,8 +1,8 @@
-/* ClearFrame server client: the ClearFrame Emby plugin's TV API. Network calls live here,
+/* Lobby server client: the Lobby Emby plugin's TV API. Network calls live here,
    as Tizen calls live in device.js. Nothing is sent until the owner pairs this TV. */
 (function () {
   'use strict';
-  var SERVER_KEY = 'clearframe.server.v1', CACHE_KEY = 'clearframe.home.cache.v1', DEFAULT_PORT = 8096;
+  var SERVER_KEY = 'lobby.server.v1', CACHE_KEY = 'lobby.home.cache.v1', DEFAULT_PORT = 8096;
 
   function read(key) {
     try { var raw = localStorage.getItem(key), v = raw ? JSON.parse(raw) : null; return v && typeof v === 'object' && !Array.isArray(v) ? v : null; }
@@ -46,8 +46,8 @@
       xhr.open(method, url, true);
       xhr.setRequestHeader('Accept', 'application/json');
       if (body !== undefined) xhr.setRequestHeader('Content-Type', 'application/json');
-      // A standard header Emby's CORS policy already allows; the plugin also accepts X-ClearFrame-Token.
-      if (token) xhr.setRequestHeader('Authorization', 'ClearFrame ' + token);
+      // A standard header Emby's CORS policy already allows; the plugin also accepts X-Lobby-Token.
+      if (token) xhr.setRequestHeader('Authorization', 'Lobby ' + token);
       xhr.onload = function () {
         var data = parse(xhr.responseText), text = data && (data.Message || data.message) || String(xhr.responseText || '').slice(0, 200);
         if (xhr.status >= 200 && xhr.status < 300) finish(null, data);
@@ -62,7 +62,7 @@
   function api(method, path, body, done, timeout) {
     var c = config();
     if (!c) { done({ code: 'unpaired', message: 'This TV is not connected to an Emby server.' }); return; }
-    request(method, c.url + '/emby/ClearFrame' + path, body, c.token, timeout, done);
+    request(method, c.url + '/emby/Lobby' + path, body, c.token, timeout, done);
   }
 
   /* Before pairing: is there an Emby server at this address? */
@@ -74,10 +74,10 @@
     });
   }
   function startPairing(url, deviceName, duid, done) {
-    request('POST', url + '/emby/ClearFrame/Pair', { DeviceName: deviceName || 'Samsung TV', Duid: duid || null }, null, 10000, done);
+    request('POST', url + '/emby/Lobby/Pair', { DeviceName: deviceName || 'Samsung TV', Duid: duid || null }, null, 10000, done);
   }
   function pairingStatus(url, id, secret, done) {
-    request('GET', url + '/emby/ClearFrame/Pair/Status?PairingId=' + encodeURIComponent(id) + '&Secret=' + encodeURIComponent(secret), undefined, null, 10000, done);
+    request('GET', url + '/emby/Lobby/Pair/Status?PairingId=' + encodeURIComponent(id) + '&Secret=' + encodeURIComponent(secret), undefined, null, 10000, done);
   }
 
   function cachedHome() { var c = read(CACHE_KEY); return c && c.data && Array.isArray(c.data.Rows) ? c.data : null; }
@@ -97,7 +97,7 @@
     return c.url + path + (path.indexOf('?') >= 0 ? '&' : '?') + 'maxWidth=' + Math.round(width || 400) + '&quality=85';
   }
 
-  window.ClearFrameMedia = {
+  window.LobbyMedia = {
     config: config, save: save, forget: forget, normalise: normalise, host: host,
     probe: probe, startPairing: startPairing, pairingStatus: pairingStatus,
     home: home, cachedHome: cachedHome, image: image,

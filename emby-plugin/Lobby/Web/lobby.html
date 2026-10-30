@@ -1,64 +1,64 @@
 <!DOCTYPE html>
 <html>
 <head>
-    <title>ClearFrame</title>
+    <title>Lobby</title>
 </head>
 <body>
-<div id="clearFrameConfigPage" data-role="page" class="page type-interior pluginConfigurationPage" data-require="emby-input,emby-button,emby-checkbox" data-controller="__plugin/clearframejs">
+<div id="lobbyConfigPage" data-role="page" class="page type-interior pluginConfigurationPage" data-require="emby-input,emby-button,emby-checkbox" data-controller="__plugin/lobbyjs">
     <style>
-        #clearFrameConfigPage .cf-section { margin: 0 0 2.5em; }
-        #clearFrameConfigPage .cf-section > h2 { margin: 0 0 .3em; }
-        #clearFrameConfigPage .cf-help { opacity: .7; margin: 0 0 1em; font-size: .92em; line-height: 1.45; }
-        #clearFrameConfigPage .cf-card { border: 1px solid rgba(128,128,128,.35); border-radius: 8px; padding: 1em 1.2em; margin: 0 0 1em; background: rgba(128,128,128,.06); }
-        #clearFrameConfigPage .cf-card-head { display: flex; align-items: center; gap: 1em; flex-wrap: wrap; margin-bottom: .8em; }
-        #clearFrameConfigPage .cf-card-title { font-size: 1.15em; font-weight: 600; }
-        #clearFrameConfigPage .cf-code { font-family: ui-monospace, Menlo, Consolas, monospace; font-size: 1.6em; letter-spacing: .15em; font-weight: 700; padding: .1em .5em; border-radius: 6px; background: rgba(82,181,75,.18); }
-        #clearFrameConfigPage .cf-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(240px, 1fr)); gap: .9em 1.2em; }
-        #clearFrameConfigPage .cf-field label { display: block; font-size: .85em; opacity: .75; margin-bottom: .3em; }
-        #clearFrameConfigPage .cf-field input, #clearFrameConfigPage .cf-field select, #clearFrameConfigPage .cf-field textarea,
-        #clearFrameConfigPage .cf-inline-select {
+        #lobbyConfigPage .cf-section { margin: 0 0 2.5em; }
+        #lobbyConfigPage .cf-section > h2 { margin: 0 0 .3em; }
+        #lobbyConfigPage .cf-help { opacity: .7; margin: 0 0 1em; font-size: .92em; line-height: 1.45; }
+        #lobbyConfigPage .cf-card { border: 1px solid rgba(128,128,128,.35); border-radius: 8px; padding: 1em 1.2em; margin: 0 0 1em; background: rgba(128,128,128,.06); }
+        #lobbyConfigPage .cf-card-head { display: flex; align-items: center; gap: 1em; flex-wrap: wrap; margin-bottom: .8em; }
+        #lobbyConfigPage .cf-card-title { font-size: 1.15em; font-weight: 600; }
+        #lobbyConfigPage .cf-code { font-family: ui-monospace, Menlo, Consolas, monospace; font-size: 1.6em; letter-spacing: .15em; font-weight: 700; padding: .1em .5em; border-radius: 6px; background: rgba(82,181,75,.18); }
+        #lobbyConfigPage .cf-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(240px, 1fr)); gap: .9em 1.2em; }
+        #lobbyConfigPage .cf-field label { display: block; font-size: .85em; opacity: .75; margin-bottom: .3em; }
+        #lobbyConfigPage .cf-field input, #lobbyConfigPage .cf-field select, #lobbyConfigPage .cf-field textarea,
+        #lobbyConfigPage .cf-inline-select {
             width: 100%; box-sizing: border-box; font: inherit; color: inherit; padding: .5em .6em;
             background: rgba(128,128,128,.12); border: 1px solid rgba(128,128,128,.4); border-radius: 4px;
         }
-        #clearFrameConfigPage .cf-field select option, #clearFrameConfigPage .cf-inline-select option { color: #111; }
-        #clearFrameConfigPage .cf-field textarea { min-height: 3.2em; resize: vertical; }
-        #clearFrameConfigPage .cf-hint { font-size: .8em; opacity: .65; margin-top: .35em; line-height: 1.4; }
-        #clearFrameConfigPage .cf-summary { font-size: .88em; opacity: .85; margin: -.2em 0 .9em; }
-        #clearFrameConfigPage .cf-actions { display: flex; gap: .6em; flex-wrap: wrap; margin-top: 1em; }
-        #clearFrameConfigPage .cf-btn { font: inherit; color: inherit; cursor: pointer; padding: .5em 1.1em; border-radius: 4px; border: 1px solid rgba(128,128,128,.5); background: rgba(128,128,128,.15); }
-        #clearFrameConfigPage .cf-btn:hover { background: rgba(128,128,128,.28); }
-        #clearFrameConfigPage .cf-btn-primary { background: #52b54b; border-color: #52b54b; color: #fff; }
-        #clearFrameConfigPage .cf-btn-primary:hover { background: #48a142; }
-        #clearFrameConfigPage .cf-btn-danger { border-color: rgba(220,70,70,.7); color: #e06363; }
-        #clearFrameConfigPage .cf-status { font-size: .88em; opacity: .85; }
-        #clearFrameConfigPage .cf-dot { display: inline-block; width: .6em; height: .6em; border-radius: 50%; margin-right: .35em; background: #999; vertical-align: middle; }
-        #clearFrameConfigPage .cf-dot.ok { background: #52b54b; }
-        #clearFrameConfigPage .cf-dot.warn { background: #d9a53b; }
-        #clearFrameConfigPage .cf-empty { opacity: .65; font-style: italic; padding: .4em 0 1em; }
-        #clearFrameConfigPage .cf-links { width: 100%; border-collapse: collapse; }
-        #clearFrameConfigPage .cf-links td, #clearFrameConfigPage .cf-links th { text-align: left; padding: .6em .5em; border-bottom: 1px solid rgba(128,128,128,.25); vertical-align: middle; }
-        #clearFrameConfigPage .cf-links th { font-size: .85em; opacity: .7; font-weight: 600; }
-        #clearFrameConfigPage .cf-chip { display: inline-flex; align-items: center; gap: .4em; padding: .2em .3em .2em .7em; margin: .15em .3em .15em 0; border-radius: 999px; background: rgba(128,128,128,.18); font-size: .92em; }
-        #clearFrameConfigPage .cf-chip.suggested { background: rgba(217,165,59,.2); border: 1px dashed rgba(217,165,59,.8); }
-        #clearFrameConfigPage .cf-badge { font-size: .72em; text-transform: uppercase; letter-spacing: .05em; opacity: .75; }
-        #clearFrameConfigPage .cf-chip button { font: inherit; color: inherit; background: none; border: 0; cursor: pointer; padding: 0 .35em; opacity: .75; }
-        #clearFrameConfigPage .cf-chip button:hover { opacity: 1; }
-        #clearFrameConfigPage .cf-inline-select { width: auto; min-width: 12em; padding: .3em .4em; }
-        #clearFrameConfigPage .cf-message { margin-top: .6em; font-size: .92em; }
-        #clearFrameConfigPage .cf-message.ok { color: #52b54b; }
-        #clearFrameConfigPage .cf-message.err { color: #e06363; }
-        #clearFrameConfigPage .cf-checks { display: grid; grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)); gap: .2em 1.2em; }
-        #clearFrameConfigPage .cf-checks label { display: flex; align-items: center; gap: .5em; padding: .35em 0; cursor: pointer; }
-        #clearFrameConfigPage .cf-checks input { width: 1.1em; height: 1.1em; }
+        #lobbyConfigPage .cf-field select option, #lobbyConfigPage .cf-inline-select option { color: #111; }
+        #lobbyConfigPage .cf-field textarea { min-height: 3.2em; resize: vertical; }
+        #lobbyConfigPage .cf-hint { font-size: .8em; opacity: .65; margin-top: .35em; line-height: 1.4; }
+        #lobbyConfigPage .cf-summary { font-size: .88em; opacity: .85; margin: -.2em 0 .9em; }
+        #lobbyConfigPage .cf-actions { display: flex; gap: .6em; flex-wrap: wrap; margin-top: 1em; }
+        #lobbyConfigPage .cf-btn { font: inherit; color: inherit; cursor: pointer; padding: .5em 1.1em; border-radius: 4px; border: 1px solid rgba(128,128,128,.5); background: rgba(128,128,128,.15); }
+        #lobbyConfigPage .cf-btn:hover { background: rgba(128,128,128,.28); }
+        #lobbyConfigPage .cf-btn-primary { background: #52b54b; border-color: #52b54b; color: #fff; }
+        #lobbyConfigPage .cf-btn-primary:hover { background: #48a142; }
+        #lobbyConfigPage .cf-btn-danger { border-color: rgba(220,70,70,.7); color: #e06363; }
+        #lobbyConfigPage .cf-status { font-size: .88em; opacity: .85; }
+        #lobbyConfigPage .cf-dot { display: inline-block; width: .6em; height: .6em; border-radius: 50%; margin-right: .35em; background: #999; vertical-align: middle; }
+        #lobbyConfigPage .cf-dot.ok { background: #52b54b; }
+        #lobbyConfigPage .cf-dot.warn { background: #d9a53b; }
+        #lobbyConfigPage .cf-empty { opacity: .65; font-style: italic; padding: .4em 0 1em; }
+        #lobbyConfigPage .cf-links { width: 100%; border-collapse: collapse; }
+        #lobbyConfigPage .cf-links td, #lobbyConfigPage .cf-links th { text-align: left; padding: .6em .5em; border-bottom: 1px solid rgba(128,128,128,.25); vertical-align: middle; }
+        #lobbyConfigPage .cf-links th { font-size: .85em; opacity: .7; font-weight: 600; }
+        #lobbyConfigPage .cf-chip { display: inline-flex; align-items: center; gap: .4em; padding: .2em .3em .2em .7em; margin: .15em .3em .15em 0; border-radius: 999px; background: rgba(128,128,128,.18); font-size: .92em; }
+        #lobbyConfigPage .cf-chip.suggested { background: rgba(217,165,59,.2); border: 1px dashed rgba(217,165,59,.8); }
+        #lobbyConfigPage .cf-badge { font-size: .72em; text-transform: uppercase; letter-spacing: .05em; opacity: .75; }
+        #lobbyConfigPage .cf-chip button { font: inherit; color: inherit; background: none; border: 0; cursor: pointer; padding: 0 .35em; opacity: .75; }
+        #lobbyConfigPage .cf-chip button:hover { opacity: 1; }
+        #lobbyConfigPage .cf-inline-select { width: auto; min-width: 12em; padding: .3em .4em; }
+        #lobbyConfigPage .cf-message { margin-top: .6em; font-size: .92em; }
+        #lobbyConfigPage .cf-message.ok { color: #52b54b; }
+        #lobbyConfigPage .cf-message.err { color: #e06363; }
+        #lobbyConfigPage .cf-checks { display: grid; grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)); gap: .2em 1.2em; }
+        #lobbyConfigPage .cf-checks label { display: flex; align-items: center; gap: .5em; padding: .35em 0; cursor: pointer; }
+        #lobbyConfigPage .cf-checks input { width: 1.1em; height: 1.1em; }
     </style>
 
     <div data-role="content">
         <div class="content-primary">
 
             <div class="cf-section">
-                <h1 style="margin-bottom:.2em;">ClearFrame</h1>
+                <h1 style="margin-bottom:.2em;">Lobby</h1>
                 <p class="cf-help">
-                    Server side of the ClearFrame home screen for Samsung TVs. Pair each TV here, pick the Emby account it uses,
+                    Server side of the Lobby home screen for Samsung TVs. Pair each TV here, pick the Emby account it uses,
                     and link Emby accounts to Seerr so requests from the TV are made by the right person.
                 </p>
             </div>
@@ -70,7 +70,7 @@
                     <button type="button" class="cf-btn" data-cf="refresh">Refresh</button>
                 </div>
                 <p class="cf-help">
-                    Start pairing in ClearFrame on the TV and its code appears below. For one-press playback, ClearFrame needs to know which
+                    Start pairing in Lobby on the TV and its code appears below. For one-press playback, Lobby needs to know which
                     Emby app session belongs to the TV: open the Emby app on that TV once, press Refresh, then choose it under <b>Emby app on this TV</b>.
                     If Emby uses the TV's hardware ID, it's matched automatically.
                 </p>
@@ -135,7 +135,7 @@
             <div class="cf-section">
                 <h2>TV defaults</h2>
                 <p class="cf-help">
-                    Each TV can change these in ClearFrame's own settings on the TV. These values apply to newly paired TVs,
+                    Each TV can change these in Lobby's own settings on the TV. These values apply to newly paired TVs,
                     and to any TV that hasn't changed its settings (or was reset from its card above).
                 </p>
                 <div class="cf-card">

@@ -3,11 +3,11 @@ using System.Collections.Generic;
 using System.Linq;
 using System.Threading;
 using System.Threading.Tasks;
-using ClearFrame.Configuration;
+using Lobby.Configuration;
 using MediaBrowser.Controller.Library;
 using MediaBrowser.Model.Logging;
 
-namespace ClearFrame.Services
+namespace Lobby.Services
 {
     public class SyncReport
     {

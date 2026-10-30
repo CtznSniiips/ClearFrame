@@ -1,4 +1,4 @@
-// Test the ClearFrame server client's address handling and pairing storage. No network access.
+// Test the Lobby server client's address handling and pairing storage. No network access.
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 import vm from 'node:vm';
@@ -10,7 +10,7 @@ function client(seed = {}) {
   const localStorage = { getItem: k => store.has(k) ? store.get(k) : null, setItem: (k, v) => store.set(k, String(v)), removeItem: k => store.delete(k) };
   const window = {};
   vm.runInNewContext(source, { window, localStorage, setTimeout, clearTimeout, XMLHttpRequest: function () { throw Error('no network in tests'); }, encodeURIComponent });
-  return { media: window.ClearFrameMedia, store };
+  return { media: window.LobbyMedia, store };
 }
 
 test('server addresses default to http and port 8096', () => {
@@ -31,21 +31,21 @@ test('pairing is saved, read back and forgotten with its cache', () => {
   assert.equal(media.config(), null);
   assert.equal(media.save('http://10.0.0.5:8096', 'tok_0123456789abcdef', 'Living Room'), true);
   assert.deepEqual({ ...media.config() }, { url: 'http://10.0.0.5:8096', token: 'tok_0123456789abcdef', tvName: 'Living Room' });
-  store.set('clearframe.home.cache.v1', JSON.stringify({ data: { Rows: [] } }));
+  store.set('lobby.home.cache.v1', JSON.stringify({ data: { Rows: [] } }));
   media.forget();
   assert.equal(media.config(), null);
-  assert.equal(store.has('clearframe.home.cache.v1'), false);
+  assert.equal(store.has('lobby.home.cache.v1'), false);
 });
 
 test('tampered or partial storage is ignored', () => {
   for (const raw of ['nope', '[]', JSON.stringify({ url: 'javascript:alert(1)', token: 'tok_0123456789abcdef' }), JSON.stringify({ url: 'http://x:1', token: 'short' })]) {
-    const { media } = client({ 'clearframe.server.v1': raw });
+    const { media } = client({ 'lobby.server.v1': raw });
     assert.equal(media.config(), null, raw);
   }
 });
 
 test('images: Emby paths are sized on the paired server, TMDB passes through, others are dropped', () => {
-  const { media } = client({ 'clearframe.server.v1': JSON.stringify({ url: 'http://10.0.0.5:8096', token: 'tok_0123456789abcdef' }) });
+  const { media } = client({ 'lobby.server.v1': JSON.stringify({ url: 'http://10.0.0.5:8096', token: 'tok_0123456789abcdef' }) });
   assert.equal(media.image('/emby/Items/1/Images/Primary?tag=a', 400), 'http://10.0.0.5:8096/emby/Items/1/Images/Primary?tag=a&maxWidth=400&quality=85');
   assert.equal(media.image('https://image.tmdb.org/t/p/w342/x.jpg'), 'https://image.tmdb.org/t/p/w342/x.jpg');
   assert.equal(media.image('//evil.example/x.jpg'), '');

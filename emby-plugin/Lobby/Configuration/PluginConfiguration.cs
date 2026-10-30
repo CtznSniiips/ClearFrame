@@ -1,6 +1,6 @@
 using MediaBrowser.Model.Plugins;
 
-namespace ClearFrame.Configuration
+namespace Lobby.Configuration
 {
     /// <summary>
     /// Persisted plugin settings. Saved by Emby as XML, so collections are plain arrays.
@@ -52,14 +52,14 @@ namespace ClearFrame.Configuration
         public UserLink[] UserLinks { get; set; } = new UserLink[0];
     }
 
-    /// <summary>A TV running ClearFrame that has been paired with this server.</summary>
+    /// <summary>A TV running Lobby that has been paired with this server.</summary>
     public class TvDevice
     {
         public string Id { get; set; }
 
         public string Name { get; set; }
 
-        /// <summary>SHA-256 hex of the TV's ClearFrame token. The token itself is never stored.</summary>
+        /// <summary>SHA-256 hex of the TV's Lobby token. The token itself is never stored.</summary>
         public string TokenHash { get; set; }
 
         /// <summary>Emby user (GUID, "N" format) the TV acts as.</summary>
@@ -68,7 +68,7 @@ namespace ClearFrame.Configuration
         /// <summary>DeviceId reported by the Emby app on this TV, used to find its session for remote control.</summary>
         public string EmbyDeviceId { get; set; }
 
-        /// <summary>Samsung DUID reported by ClearFrame. Matched against session DeviceIds as a fallback.</summary>
+        /// <summary>Samsung DUID reported by Lobby. Matched against session DeviceIds as a fallback.</summary>
         public string Duid { get; set; }
 
         /// <summary>Team names / keywords for the Sports row.</summary>

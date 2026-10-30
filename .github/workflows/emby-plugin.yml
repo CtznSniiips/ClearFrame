@@ -71,7 +71,7 @@ jobs:
           ls -la "$EMBY_REF_DIR"
 
       - name: Build
-        working-directory: emby-plugin/ClearFrame
+        working-directory: emby-plugin/Lobby
         run: |
           set -o pipefail
           if ! dotnet build -c Release -p:EmbyRefDir="$EMBY_REF_DIR" -warnaserror:CS0618 2>&1 | tee "$RUNNER_TEMP/build.log"; then
@@ -81,16 +81,16 @@ jobs:
           fi
 
       - name: Check output
-        working-directory: emby-plugin/ClearFrame
+        working-directory: emby-plugin/Lobby
         run: |
           set -euo pipefail
-          dll=bin/Release/netstandard2.0/ClearFrame.dll
+          dll=bin/Release/netstandard2.0/Lobby.dll
           test -s "$dll"
           echo "Built $(du -h "$dll" | cut -f1) $dll against Emby ${{ matrix.emby }}"
 
       - name: Upload plugin
         uses: actions/upload-artifact@v7
         with:
-          name: ClearFrame-emby-${{ matrix.emby }}
-          path: emby-plugin/ClearFrame/bin/Release/netstandard2.0/ClearFrame.dll
+          name: Lobby-emby-${{ matrix.emby }}
+          path: emby-plugin/Lobby/bin/Release/netstandard2.0/Lobby.dll
           if-no-files-found: error

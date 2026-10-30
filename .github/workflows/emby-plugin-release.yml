@@ -1,9 +1,9 @@
 name: Emby plugin release
 
 # Manually publishes a GitHub Release for the Emby plugin:
-#   - version comes from <Version> in emby-plugin/ClearFrame/ClearFrame.csproj
+#   - version comes from <Version> in emby-plugin/Lobby/Lobby.csproj
 #   - release notes come from that version's "## x.y.z" section in emby-plugin/CHANGELOG.md
-#   - ClearFrame.dll is built by the regular "Emby plugin" workflow and attached
+#   - Lobby.dll is built by the regular "Emby plugin" workflow and attached
 # Tag: emby-plugin-v<version>. Bump <Version> and add a CHANGELOG section before running.
 
 on:
@@ -40,21 +40,21 @@ jobs:
         id: version
         run: |
           set -euo pipefail
-          version=$(sed -n 's:.*<Version>\(.*\)</Version>.*:\1:p' emby-plugin/ClearFrame/ClearFrame.csproj | head -n1)
+          version=$(sed -n 's:.*<Version>\(.*\)</Version>.*:\1:p' emby-plugin/Lobby/Lobby.csproj | head -n1)
           if [ -z "$version" ]; then
-            echo "::error file=emby-plugin/ClearFrame/ClearFrame.csproj::No <Version> found"
+            echo "::error file=emby-plugin/Lobby/Lobby.csproj::No <Version> found"
             exit 1
           fi
           echo "version=$version" >> "$GITHUB_OUTPUT"
           echo "tag=emby-plugin-v$version" >> "$GITHUB_OUTPUT"
-          echo "Releasing ClearFrame Emby plugin $version"
+          echo "Releasing Lobby Emby plugin $version"
 
       - name: Check the tag is new
         env:
           TAG: ${{ steps.version.outputs.tag }}
         run: |
           if git ls-remote --exit-code --tags origin "refs/tags/$TAG" >/dev/null; then
-            echo "::error::$TAG already exists. Bump <Version> in ClearFrame.csproj and add a CHANGELOG section first."
+            echo "::error::$TAG already exists. Bump <Version> in Lobby.csproj and add a CHANGELOG section first."
             exit 1
           fi
 
@@ -100,7 +100,7 @@ jobs:
     steps:
       - uses: actions/download-artifact@v8
         with:
-          name: ClearFrame-emby-${{ inputs.emby_version }}
+          name: Lobby-emby-${{ inputs.emby_version }}
           path: dist
 
       - uses: actions/download-artifact@v8
@@ -117,17 +117,17 @@ jobs:
           PRERELEASE: ${{ inputs.prerelease }}
         run: |
           set -euo pipefail
-          test -s dist/ClearFrame.dll
+          test -s dist/Lobby.dll
           {
             cat notes.md
             echo
             echo "---"
-            echo "Built against Emby Server $EMBY. Copy \`ClearFrame.dll\` into your Emby \`plugins\` folder and restart Emby."
+            echo "Built against Emby Server $EMBY. Copy \`Lobby.dll\` into your Emby \`plugins\` folder and restart Emby."
           } > body.md
 
-          args=(--repo "$GITHUB_REPOSITORY" --target "$GITHUB_SHA" --title "ClearFrame Emby plugin $VERSION" --notes-file body.md)
+          args=(--repo "$GITHUB_REPOSITORY" --target "$GITHUB_SHA" --title "Lobby Emby plugin $VERSION" --notes-file body.md)
           if [ "$PRERELEASE" = "true" ]; then
             args+=(--prerelease)
           fi
-          gh release create "$TAG" dist/ClearFrame.dll "${args[@]}"
+          gh release create "$TAG" dist/Lobby.dll "${args[@]}"
           echo "Published $TAG"

@@ -4,7 +4,7 @@ using System.Globalization;
 using System.Linq;
 using System.Threading;
 using System.Threading.Tasks;
-using ClearFrame.Configuration;
+using Lobby.Configuration;
 using MediaBrowser.Controller.Dto;
 using MediaBrowser.Controller.Entities;
 using MediaBrowser.Controller.Library;
@@ -15,7 +15,7 @@ using MediaBrowser.Model.Entities;
 using MediaBrowser.Model.Logging;
 using MediaBrowser.Model.Querying;
 
-namespace ClearFrame.Services
+namespace Lobby.Services
 {
     public class HomeItem
     {
@@ -36,7 +36,7 @@ namespace ClearFrame.Services
         public long? PositionTicks { get; set; }
         public long? RuntimeTicks { get; set; }
 
-        /// <summary>Item id to send to /ClearFrame/Play (the channel id for Live TV programs).</summary>
+        /// <summary>Item id to send to /Lobby/Play (the channel id for Live TV programs).</summary>
         public string PlayItemId { get; set; }
 
         /// <summary>resume, play or request.</summary>
@@ -139,7 +139,7 @@ namespace ClearFrame.Services
             var user = string.IsNullOrWhiteSpace(tv.EmbyUserId) ? null : _users.GetUserById(tv.EmbyUserId);
             if (user == null)
             {
-                throw new ArgumentException("The Emby user assigned to '" + tv.Name + "' no longer exists. Pick another one in the ClearFrame settings.");
+                throw new ArgumentException("The Emby user assigned to '" + tv.Name + "' no longer exists. Pick another one in the Lobby settings.");
             }
 
             return user;
