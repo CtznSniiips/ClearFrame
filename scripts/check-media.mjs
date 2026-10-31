@@ -678,8 +678,10 @@ async function main() {
       const icons = await current.locator('#wDock .wapp.is-input .wapp-input svg').evaluateAll(els => els.map(e => e.innerHTML.length));
       const kinds = await current.evaluate(() => [...document.querySelectorAll('#wDock .wapp.is-input')].map(e => e.querySelector('svg').innerHTML.includes('rect') ? 'soundbar' : e.querySelector('svg').innerHTML.includes('circle') ? 'gamepad' : 'hdmi'));
       check('Switch gets a controller, the soundbar a soundbar, a plain input the HDMI plug', kinds.join() === 'gamepad,hdmi,soundbar', { kinds, icons });
-      const emby = await current.locator('#wDock .mark[data-mark="emby"] .mk').evaluate(e => getComputedStyle(e).backgroundColor).catch(() => null);
-      check('Emby shows its green mark', emby === 'rgb(82, 181, 75)', emby);
+      const colour = await current.evaluate(() => ['emby', 'youtube', 'primevideo'].map(id => { const m = document.querySelector('#wDock .mark[data-mark="' + id + '"]'); return m && !!m.querySelector('img') && !m.querySelector('.mk'); }));
+      check('Emby, YouTube and Prime Video show their marks in colour', colour.every(Boolean), colour);
+      const tinted = await current.evaluate(() => !!document.querySelector('#wDock .mark[data-mark="netflix"] .mk'));
+      check('other marks stay tinted to the theme', tinted);
       await scene('settings');
       check('Settings offers Inputs on Home with a count', (await current.locator('[data-action="settings.group.inputs"]').textContent()).includes('3 of 3'));
       const sbox = await current.locator('.settings-group').evaluateAll(els => els.map(e => e.getBoundingClientRect().bottom));
