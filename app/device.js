@@ -70,6 +70,51 @@
       });
     } catch (err) { finish(failure(err)); }
   }
+  /* HDMI inputs, through Samsung's public SystemInfo and TVWindow APIs: point the main picture at the
+     source, then open Samsung's TV viewer to show it full screen. */
+  var VIEWER = 'org.tizen.tv-viewer';
+  function sources(info) {
+    function tag(list, on) { return (Array.isArray(list) ? list : []).map(function (s) { return { s: s, on: on }; }); }
+    return info ? tag(info.connected, true).concat(tag(info.disconnected, false)) : [];
+  }
+  function hdmi(s) { return !!s && s.type === 'HDMI' && typeof s.number === 'number' && s.number >= 1 && s.number <= 9; }
+  function inputs(done) {
+    var t = window.tizen;
+    if (!t || !t.systeminfo || !t.tvwindow) { done(null, []); return; }
+    var finish = bounded(done, 8000);
+    try {
+      t.systeminfo.getPropertyValue('VIDEOSOURCE', function (info) {
+        var seen = {}, out = [];
+        sources(info).forEach(function (e) {
+          if (!hdmi(e.s) || seen[e.s.number]) return;
+          seen[e.s.number] = true;
+          // Some firmware reports the name given in the TV's source list.
+          var name = typeof e.s.editName === 'string' ? e.s.editName.replace(/\s+/g, ' ').trim().slice(0, 40) : '';
+          out.push({ number: e.s.number, connected: e.on, name: /^hdmi\s*\d$/i.test(name) ? '' : name });
+        });
+        out.sort(function (a, b) { return a.number - b.number; });
+        finish(null, out);
+      }, function (err) { finish(failure(err)); });
+    } catch (err) { finish(failure(err)); }
+  }
+  function input(number, done) {
+    var t = window.tizen;
+    if (!t || !t.systeminfo || !t.tvwindow || !api()) { unavailable(done); return; }
+    var finish = bounded(done, 10000);
+    try {
+      t.systeminfo.getPropertyValue('VIDEOSOURCE', function (info) {
+        var match = sources(info).filter(function (e) { return hdmi(e.s) && e.s.number === number; })[0];
+        if (!match) { finish({ message: 'HDMI ' + number + ' isn’t available on this TV.', detail: '' }); return; }
+        try {
+          // Pass the TV's own source object: firmware rejects a rebuilt one.
+          t.tvwindow.setSource(match.s, function () {
+            try { api().launch(VIEWER, function () { finish(null); }, function (err) { finish(failure(err)); }); }
+            catch (err) { finish(failure(err)); }
+          }, function (err) { finish(failure(err)); }, 'MAIN');
+        } catch (err) { finish(failure(err)); }
+      }, function (err) { finish(failure(err)); });
+    } catch (err) { finish(failure(err)); }
+  }
   /* Samsung's product API is only loaded on the TV, and only when pairing needs it. */
   function identity(done) {
     var result = { name: 'Samsung TV', duid: null }, finished = false, script;
@@ -127,5 +172,5 @@
       }, function (err) { finish(failure(err)); });
     } catch (err) { finish(failure(err)); }
   }
-  window.FrameDevice = { launch: launch, launchApp: launchApp, art: art, home: home, settings: settings, apps: apps, emby: emby, identity: identity, digits: digits };
+  window.FrameDevice = { launch: launch, launchApp: launchApp, art: art, home: home, settings: settings, apps: apps, emby: emby, identity: identity, digits: digits, inputs: inputs, input: input };
 }());

@@ -67,6 +67,7 @@
     down: '<path d="m5 8.5 7 7 7-7"/>',
     updown: '<path d="m7.5 9.5 4.5-4.5 4.5 4.5M7.5 14.5l4.5 4.5 4.5-4.5"/>',
     tv: '<rect x="3" y="4.5" width="18" height="12" rx="2"/><path d="M8.5 20h7"/>',
+    hdmi: '<path d="M3.5 8.5h17v4.2l-2.6 3.3H6.1l-2.6-3.3Z"/><path d="M7.5 11.6h9"/>',
     warn: '<path d="M12 4 2.8 19.5h18.4Z"/><path d="M12 10v4.5M12 17.3v.1"/>'
   };
 
@@ -85,6 +86,7 @@
   /* Lobby: Emby and Seerr rows from the paired server. Absent until the owner pairs this TV,
      so an unpaired Home is unchanged. */
   var Media = window.LobbyMedia;
+  var INPUTS = [];
   var W = { i: 0, timer: 0, src: null, back: 0, pre: null, preImg: null, band: 0, side: 0 };
   var M = { cfg: null, data: null, rows: [], loading: false, error: null, at: 0, request: 0, unauthorized: false,
     featured: [], cols: {}, row: 0, settings: null, settingsLoading: false, settingsError: null, saving: null, note: null, timer: 0 };
@@ -543,6 +545,27 @@
     S.press = id; S.lastLaunch = a.name;
     perform(a.name, function (done) { FrameDevice.launchApp(a.appId, done); });
   }
+  /* On the TV, Home keeps only installed apps. A Home still on the inherited defaults is refilled from the
+     installed services below, in this order; one the owner arranged keeps its order. */
+  var HOME_PICKS = [{ id: 'netflix' }, { id: 'youtube' }, { id: 'primevideo' }, { id: 'disneyplus' }, { name: /^hulu$/i },
+    { id: 'appletv' }, { name: /^peacock/i }, { name: /^youtube tv$/i }, { name: /^(?:max|hbo max)$/i }, { name: /^paramount/i }, { name: /^emby$/i }, { name: /^plex$/i }];
+  function syncHome() {
+    var home = S.c.home, kept, want = [], c;
+    if (!ALPHA.length) return;
+    kept = home.filter(function (id) { return ALPHA.indexOf(id) >= 0; });
+    if (kept.length === home.length) return;
+    if (same(home, PRIMARY)) {
+      HOME_PICKS.forEach(function (p) {
+        var id = p.id ? (ALPHA.indexOf(p.id) >= 0 ? p.id : null) : ALPHA.filter(function (x) { return p.name.test(app(x).name); })[0];
+        if (id && want.indexOf(id) < 0 && want.length < CAP) want.push(id);
+      });
+    }
+    if (!want.length) want = kept;
+    if (!want.length) return;
+    c = next(want, S.c.recent.filter(function (id) { return ALPHA.indexOf(id) >= 0 && want.indexOf(id) < 0; }));
+    c.lastApp = want.indexOf(S.c.lastApp) >= 0 ? S.c.lastApp : want[0];
+    if (write(c, 'Apps on Home')) { setSel(want.indexOf(S.sel) >= 0 ? S.sel : want[0]); log('Home matched to installed apps'); }
+  }
   function refreshCatalog() {
     var request, oldFocus;
     if (catalog.loading) return;
@@ -565,6 +588,7 @@
       });
       ALPHA.sort(function (a, b) { return app(a).name.toLowerCase().localeCompare(app(b).name.toLowerCase()); });
       catalog.loaded = true; catalog.error = null; catalog.revision++;
+      syncHome();
       if (top().id === 'apps' && oldFocus && ALPHA.indexOf(oldFocus) >= 0) top().f.i = ALPHA.indexOf(oldFocus);
       norm(); render();
     });
@@ -1830,7 +1854,29 @@
   function greeting() { var h = new Date().getHours(); return h < 5 ? 'Good evening' : h < 12 ? 'Good morning' : h < 18 ? 'Good afternoon' : 'Good evening'; }
   function wDateText() { var d = new Date(); return DAYS[d.getDay()] + ', ' + MONTHS[d.getMonth()] + ' ' + d.getDate(); }
   function wTop(f) { if (M.featured.length) f.zone = 'whero'; else if (wBands().length) wEnterBand(f, wBands(), 0, 0); else wRail(f); }
-  function wDock(f) { if (S.c.home.length) { f.zone = 'wapps'; f.a = clamp(f.a || 0, 0, S.c.home.length - 1); } }
+  function wDock(f) { var n = dockItems().length; if (n) { f.zone = 'wapps'; f.a = clamp(f.a || 0, 0, n - 1); } }
+  /* The Watch dock: Home apps, then the TV's HDMI inputs. */
+  function dockItems() {
+    return S.c.home.map(function (id) { return { kind: 'app', id: id }; }).concat(INPUTS.map(function (inp) { return { kind: 'input', id: 'hdmi' + inp.number, input: inp }; }));
+  }
+  function inputName(inp) { return inp.name || 'HDMI ' + inp.number; }
+  function refreshInputs() {
+    FrameDevice.inputs(function (err, list) {
+      var next = err || !Array.isArray(list) ? [] : list.slice(0, 6);
+      if (JSON.stringify(next) === JSON.stringify(INPUTS)) return;
+      INPUTS = next; norm(); render();
+    });
+  }
+  function openInput(inp) {
+    if (busy) return;
+    S.press = null;
+    perform(inputName(inp), function (done) { FrameDevice.input(inp.number, done); });
+  }
+  function dockOk(item) {
+    if (!item) return;
+    if (item.kind === 'input') openInput(item.input);
+    else { setSel(item.id); launch(item.id); }
+  }
   function wRail(f) { f.zone = 'wrail'; f.u = clamp(S.lastUtil, 0, W_RAIL.length - 1); }
   function wEnterBand(f, bands, b, s) {
     f.b = b; f.zone = 'wband'; f.s = clamp(s || 0, 0, bands[b].rows.length - 1);
@@ -1843,7 +1889,7 @@
       if (!bands.length) { wTop(f); if (f.zone === 'wband') wDock(f); }
       else { f.b = clamp(f.b || 0, 0, bands.length - 1); f.s = clamp(f.s || 0, 0, bands[f.b].rows.length - 1); }
     }
-    if (f.zone === 'wapps') { if (S.c.home.length) f.a = clamp(f.a || 0, 0, S.c.home.length - 1); else wTop(f); }
+    if (f.zone === 'wapps') { if (dockItems().length) f.a = clamp(f.a || 0, 0, dockItems().length - 1); else wTop(f); }
     if (f.zone === 'wrail') f.u = clamp(f.u || 0, 0, W_RAIL.length - 1);
     W.i = clamp(W.i, 0, Math.max(0, M.featured.length - 1));
   }
@@ -1869,11 +1915,11 @@
     }
     if (f.zone === 'wapps') {
       if (k === 'left') { if (f.a > 0) f.a--; else wRail(f); }
-      else if (k === 'right' && f.a < S.c.home.length - 1) f.a++;
+      else if (k === 'right' && f.a < dockItems().length - 1) f.a++;
       // Up returns to the band last used, or the top when there are no rows.
       else if (k === 'up') { if (bands.length) wEnterBand(f, bands, clamp(W.band, 0, bands.length - 1), W.side); else if (M.featured.length) f.zone = 'whero'; else wRail(f); }
       else if (k === 'back') wTop(f);
-      else if (k === 'ok') { setSel(S.c.home[f.a]); launch(S.c.home[f.a]); }
+      else if (k === 'ok') dockOk(dockItems()[f.a]);
       return;
     }
     band = bands[f.b]; row = band.rows[f.s]; c = mediaCol(row);
@@ -1988,21 +2034,27 @@
   }
   /* The Home apps, always at the bottom: a smaller version of the Dock that follows App display. */
   function renderWatchDock(zone) {
-    var n = S.c.home.length, size = WG.app, f = top().f, width = n * size.pitch - (size.pitch - size.w) + 24;
+    var items = dockItems(), n = items.length, f = top().f, inner = WG.width - 24;
+    // Tiles narrow when apps and inputs together would overflow the screen.
+    var pitch = Math.min(WG.app.pitch, Math.floor((inner + 8) / Math.max(1, n))), w = pitch - 8, width = n * pitch - 8 + 24;
     wDockEl.className = 'w-dock a-' + S.c.apps + (n ? ' is-on' : '') + (zone === 'wapps' ? ' is-active' : '');
     wDockEl.style.width = width + 'px'; wDockEl.style.left = Math.round((1920 - width) / 2) + 'px';
-    keyed(wDockEl, S.c.home.map(function (id, i) { return { key: id, id: id, i: i }; }), function (tile, te) {
-      var a = app(te.id), name = a ? a.name : te.id;
-      setContent(tile, te.id + '|' + S.c.apps + '|' + S.c.bg, function () {
-        return (S.c.apps !== 'text' && a ? '<span class="wapp-mark">' + appMark(a, 112, S.c.apps === 'icons' ? 56 : 44, S.c.apps === 'icons' ? 52 : 40) + '</span>' : '')
+    keyed(wDockEl, items.map(function (item, i) { return { key: item.kind + ':' + item.id, item: item, i: i }; }), function (tile, te) {
+      var item = te.item, a = item.kind === 'app' ? app(item.id) : null, name = a ? a.name : item.kind === 'input' ? inputName(item.input) : item.id, markW = Math.min(112, w - 16);
+      setContent(tile, item.kind + '|' + item.id + '|' + name + '|' + S.c.apps + '|' + S.c.bg + '|' + markW, function () {
+        // Inputs always carry their name: their icons are all alike.
+        if (item.kind === 'input') return '<span class="wapp-mark wapp-input">' + icon('hdmi') + '</span><span class="wapp-name">' + esc(name) + '</span>';
+        return (S.c.apps !== 'text' && a ? '<span class="wapp-mark">' + appMark(a, markW, S.c.apps === 'icons' ? 56 : 44, S.c.apps === 'icons' ? 52 : 40) + '</span>' : '')
           + (S.c.apps !== 'icons' ? '<span class="wapp-name">' + esc(name) + '</span>' : '');
       });
-      tile.className = 'wapp' + (zone === 'wapps' && te.i === f.a ? ' is-focus' : '');
-      tile.style.transform = 'translate3d(' + (12 + te.i * size.pitch) + 'px,0,0)';
-      tile.setAttribute('role', 'button'); tile.setAttribute('aria-label', name);
-      attrs(tile, 'wapp', te.i, 'home.app.' + te.id);
+      tile.className = 'wapp' + (item.kind === 'input' ? ' is-input' + (item.input.connected ? '' : ' is-off') : '') + (zone === 'wapps' && te.i === f.a ? ' is-focus' : '');
+      tile.style.width = w + 'px';
+      tile.style.transform = 'translate3d(' + (12 + te.i * pitch) + 'px,0,0)';
+      tile.setAttribute('role', 'button'); tile.setAttribute('aria-label', item.kind === 'input' && !item.input.connected ? name + ', no signal' : name);
+      attrs(tile, 'wapp', te.i, item.kind === 'input' ? 'home.input.' + item.input.number : 'home.app.' + item.id);
     });
   }
+
   function renderWatch(t) {
     var live = t.id === 'home', f = t.f, zone = live ? f.zone : '', bands = wBands(), ys = [], y = 0, shift = 0, fb = -1, row, focusItem = null, it;
     bands.forEach(function (band) { ys.push(y); y += band.h; });
@@ -2872,6 +2924,7 @@
     else {
       release();
       refreshMedia(false);
+      refreshInputs();
       if (S.c.bg === 'photo' && !S.pending && !S.previewBundle && (!committedBundle || S.bundleKey !== bundleKey(S.c))) setLook({}, { transient: true, startup: true });
       after(); updateClock(); focusStage();
     }
@@ -2918,6 +2971,8 @@
   initialise();
   M.cfg = Media.config();
   if (M.cfg) { setHome(Media.cachedHome()); refreshMedia(true); }
+  refreshInputs();
+  if (!catalog.loaded) refreshCatalog();
   setLook({}, { transient: true, startup: true });
   norm(); render(); fit(); focusStage(); updateClock(); syncRotation();
 })();
