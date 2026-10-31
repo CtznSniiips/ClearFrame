@@ -671,11 +671,45 @@ async function main() {
       check('OK switches the main picture to that input, then opens the TV viewer', set && set.source.number === 1 && set.source.editName === 'Xbox' && set.type === 'MAIN' && calls.indexOf(set) < calls.findIndex(c => c.id === 'org.tizen.tv-viewer'), calls);
       await current.close(); current = null;
 
+      // Named devices get their own icons; inputs can be taken off Home and put back.
+      const DEVICES = { connected: [{ type: 'HDMI', number: 1, editName: 'Nintendo Switch' }, { type: 'HDMI', number: 3, editName: 'Q-Series Soundbar' }], disconnected: [{ type: 'HDMI', number: 2, editName: 'HDMI2' }] };
+      api = freshApi(); await page({ paired: true, look: 'watch', catalog: TV_APPS, sources: DEVICES });
+      await until(() => document.querySelectorAll('#wDock .wapp.is-input').length === 3 && ShoreQA.state().home.length === 9);
+      const icons = await current.locator('#wDock .wapp.is-input .wapp-input svg').evaluateAll(els => els.map(e => e.innerHTML.length));
+      const kinds = await current.evaluate(() => [...document.querySelectorAll('#wDock .wapp.is-input')].map(e => e.querySelector('svg').innerHTML.includes('rect') ? 'soundbar' : e.querySelector('svg').innerHTML.includes('circle') ? 'gamepad' : 'hdmi'));
+      check('Switch gets a controller, the soundbar a soundbar, a plain input the HDMI plug', kinds.join() === 'gamepad,hdmi,soundbar', { kinds, icons });
+      const emby = await current.locator('#wDock .mark[data-mark="emby"] .mk').evaluate(e => getComputedStyle(e).backgroundColor).catch(() => null);
+      check('Emby shows its green mark', emby === 'rgb(82, 181, 75)', emby);
+      await scene('settings');
+      check('Settings offers Inputs on Home with a count', (await current.locator('[data-action="settings.group.inputs"]').textContent()).includes('3 of 3'));
+      const sbox = await current.locator('.settings-group').evaluateAll(els => els.map(e => e.getBoundingClientRect().bottom));
+      const shint = await current.locator('.settings-overview-hint').evaluate(e => e.getBoundingClientRect().top);
+      check('eight groups still fit above the hint', Math.max(...sbox) < shint, { sbox, shint });
+      await act('settings.group.inputs');
+      check('Inputs on Home opens', (await state()).view === 'inputs');
+      await reach('list.input.2.toggle');
+      await until(() => JSON.parse(localStorage.getItem('cleanframe.home.v1')).hiddenInputs.join() === '2');
+      check('the hidden input is saved', true);
+      check('the line now offers Add to Home', (await current.locator('[data-action="list.input.2.toggle"]').textContent()).includes('Add to Home'));
+      await shot('inputs-on-home');
+      await nav('back'); await nav('back');
+      await until(() => document.querySelectorAll('#wDock .wapp.is-input').length === 2);
+      const left = await current.locator('#wDock .wapp.is-input').evaluateAll(els => els.map(e => e.getAttribute('aria-label')));
+      check('the dock leaves it out', !left.some(n => /^HDMI 2/.test(n)), left);
+      await current.reload(); await until(() => ShoreQA.ready() && document.querySelectorAll('#wDock .wapp.is-input').length === 2);
+      check('it stays hidden after a restart', true);
+      await scene('settings'); await act('settings.group.inputs'); await reach('list.input.2.toggle');
+      await until(() => JSON.parse(localStorage.getItem('cleanframe.home.v1')).hiddenInputs.length === 0);
+      check('Add to Home puts it back', true);
+      await current.close(); current = null;
+
       api = freshApi(); await page({ paired: true, look: 'watch', catalog: TV_APPS, sources: { connected: [], disconnected: [] }, dock: ['espn', 'stremio', 'netflix'] });
       await until(() => ShoreQA.state().catalog.loaded);
       await current.waitForTimeout(200);
       check('a Home the owner arranged keeps its order and drops only what isn’t installed', (await state()).home.join() === 'netflix', (await state()).home);
       check('no inputs, no input tiles', await current.locator('#wDock .wapp.is-input').count() === 0);
+      await scene('settings');
+      check('no inputs, no Inputs on Home setting', await current.locator('[data-action="settings.group.inputs"]').count() === 0);
     });
 
     await run('Watch layout follows Background', async () => {
