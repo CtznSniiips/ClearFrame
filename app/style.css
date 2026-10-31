@@ -302,6 +302,7 @@ html,body{width:100%;height:100%;overflow:hidden;background:#000}
 .settings-overview{position:absolute;left:112px;top:196px;width:1056px}
 .settings-group{width:100%;height:100px;padding:12px 32px 12px 28px;border-radius:20px;display:flex;align-items:center;justify-content:space-between;color:var(--ink);transition:background-color 140ms linear,color 140ms linear}
 .settings-group+.settings-group{margin-top:6px}
+.settings-overview.is-compact .settings-group{height:88px;padding-top:8px;padding-bottom:8px}.settings-overview.is-compact .settings-group+.settings-group{margin-top:4px}
 .settings-group-copy{min-width:0;display:flex;flex-direction:column}
 .settings-group-name{font-size:40px;line-height:48px;font-weight:500;letter-spacing:-.6px}
 .settings-group-value{font-size:26px;line-height:34px;color:var(--mute);white-space:nowrap}
@@ -836,4 +837,9 @@ html,body{width:100%;height:100%;overflow:hidden;background:#000}
 .wapp .mark{position:relative;display:block}
 .wapp-name{display:block;max-width:156px;margin-top:6px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font-size:20px;line-height:26px;font-weight:600}
 .a-text .wapp-name{margin-top:0;font-size:23px;line-height:30px}
+.wapp-name{max-width:calc(100% - 12px)}
+.wapp-input .ico{width:46px;height:46px;fill:none;stroke:currentColor;stroke-width:1.5;stroke-linejoin:round;stroke-linecap:round}
+.wapp.is-input .wapp-name{margin-top:4px}
+.wapp.is-off{opacity:.5}
+.wapp.is-off.is-focus{opacity:.85}
 @media(prefers-reduced-motion:reduce){.w-bands,.wband,.wr-track,.wc,.wapp,.wi-btn,.wr-btn,.w-backdrop,.w-backs{transition:none!important}}

@@ -1,4 +1,4 @@
-# Interaction behaviour — 0.9.1
+# Interaction behaviour — 0.9.4
 
 ## Home
 
@@ -90,6 +90,8 @@ Nothing changes until the TV is paired with the Lobby Emby plugin. An unpaired H
 - The request screen describes the title from Seerr: year, type, runtime or seasons, genres and TMDB rating; the tagline; the overview (three lines at most); who directed and wrote a film, or created a show and where it airs; and up to seven cast members with their roles, using initials when there's no photo. Details arrive after the screen opens; the status line and buttons keep a fixed place, so focus never moves under the viewer.
 - Each title appears once on Home, in the first row (in this TV's order) that has it. A show counts as one title, so its episode in Next Up keeps it out of Trending.
 
+**Installed apps.** On the TV, Lobby reads the installed-app list when it starts. Home apps that aren't installed are removed. A Home still on the inherited defaults is refilled from the TV's own services, in this order where installed: Netflix, YouTube, Prime Video, Disney+, Hulu, Apple TV, Peacock, YouTube TV, Max, Paramount+, Emby, Plex (nine at most). A Home the owner arranged keeps its order. All apps and the app editor list what's installed.
+
 **Watch layout.** Settings → Layout → Watch. A newly paired TV switches to it. Until the TV is paired and the server has something to show, Watch looks and behaves like Dock, and the Layout page says why.
 
 - Top: a rail on the left (Art Mode, All apps, Settings), the date and time on the right, and a featured title over its backdrop: a greeting, the title's tagline as the headline (its name when it has none), two lines of overview, a button named for the action (Resume, Play, Request, Watch live) with the reason and details beside it, and the title's logo, or its name, on the right. Dots show which of up to five featured titles is in view.
@@ -97,7 +99,7 @@ Nothing changes until the TV is paired with the Lobby Emby plugin. An unpaired H
 - Home starts on the featured button. Left and Right step through the featured titles (Right wraps); Left from the first one reaches the rail. Featured titles change every nine seconds while Home is in view, wherever focus is; while a card has focus only the background changes. Up and Down move along the rail, and Down from Settings enters the app dock; Right or Back leaves it.
 - Below are the rows, one per band. Continue Watching and Next Up merge into one Continue Watching row: titles in progress first, then next episodes. Your Teams has its own row. Library and Live TV cards show their title and detail line only while focused; Seerr rows are artwork tiles. The focused card has a thin outline.
 - Watch follows Settings → Background: Dark and Light use a plain dark or light page; Photo keeps the wallpaper (and its rotation) behind everything, shaded so the featured image and text stay clear.
-- The Home apps stay in a dock along the bottom of the screen, a smaller version of the Dock that follows Settings → Layout → App display. Down from the last band (or from the featured title when there are no rows) enters it; Up returns to the band last used; Left from its first app reaches the rail; OK opens the app.
+- The Home apps stay in a dock along the bottom of the screen, a smaller version of the Dock that follows Settings → Layout → App display. The TV's HDMI inputs follow the apps, named as the TV's source list names them (or HDMI 1, 2…), dimmed when nothing is connected. An input named for a soundbar (Q-series, HW-Q…) shows a soundbar icon, and one named for a games console (Switch, Xbox, PlayStation…) shows a controller; others show an HDMI plug. Settings → Inputs on Home (shown when the TV reports inputs) lists each input with On Home / Add to Home, so unused inputs can be left off the dock. OK on an input switches the TV's picture to it through Samsung's public TVWindow API and opens Samsung's TV viewer. Tiles narrow so apps and inputs fit on one line. Down from the last band (or from the featured title when there are no rows) enters it; Up returns to the band last used; Left from its first app reaches the rail; OK opens the app.
 - Left/Right move along a row; Left from its first card reaches the rail. Up and Down move between rows; Up from the first row returns to the featured title. Back from any band returns to the featured title; Back there asks to leave Home.
 - While a card has focus, the top describes it: name, overview, OK action and details. A band that doesn't fit below the featured area moves up under a compact title; the bands above it and the rail fade out.
 

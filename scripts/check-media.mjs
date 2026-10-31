@@ -149,24 +149,28 @@ async function handle(route) {
 }
 
 /* ---------- Page harness ---------- */
-function installHarness({ paired, cacheHome, staleMs, look, featureMs }) {
+function installHarness({ paired, cacheHome, staleMs, look, featureMs, catalog, sources, dock }) {
   if (!sessionStorage.getItem('__seeded')) {
-    localStorage.setItem('cleanframe.home.v1', JSON.stringify({ dock: ['stremio', 'netflix', 'disneyplus', 'youtube', 'appletv', 'primevideo', 'abciview', 'sbs', 'applemusic'], wallpaper: 'misty', mode: 'fixed', lastApp: 'netflix', theme: 'shore', ...(look ? { look: { layout: look } } : {}) }));
+    localStorage.setItem('cleanframe.home.v1', JSON.stringify({ dock: dock || ['stremio', 'netflix', 'disneyplus', 'youtube', 'appletv', 'primevideo', 'abciview', 'sbs', 'applemusic'], wallpaper: 'misty', mode: 'fixed', lastApp: 'netflix', theme: 'shore', ...(look ? { look: { layout: look } } : {}) }));
     if (paired) localStorage.setItem('lobby.server.v1', JSON.stringify({ url: 'http://cf.test:8096', token: 'tok_0123456789abcdefghijklmnop', tvName: 'Living Room' }));
     if (cacheHome) localStorage.setItem('lobby.home.cache.v1', JSON.stringify({ at: 1, data: cacheHome }));
     sessionStorage.setItem('__seeded', '1');
   }
   window.ShoreQA = { minuteMs: 60000, pollMs: 40, staleMs: staleMs || 30000, featureMs: featureMs || 600000 };
-  window.__tv = { calls: [], launchFailure: false };
+  window.__tv = { calls: [], launchFailure: false, sources: sources || null };
   window.tizen = {
     ApplicationControlData: function (key, value) { this.key = key; this.value = value; },
     ApplicationControl: function (operation, uri, mime, category, data) { Object.assign(this, { operation, uri, mime, category, data }); },
     application: {
       getCurrentApplication() { return { appInfo: { id: 'nClrkHome1.FrameHome' } }; },
-      getAppsInfo(ok) { setTimeout(() => ok([]), 0); },
+      getAppsInfo(ok) { setTimeout(() => ok((catalog || []).map(a => ({ ...a }))), 0); },
       launch(id, ok, fail) { window.__tv.calls.push({ method: 'launch', id }); setTimeout(() => window.__tv.launchFailure ? fail({ name: 'NotFoundError', message: 'missing' }) : ok(), 0); },
       launchAppControl(control, id, ok) { window.__tv.calls.push({ method: 'launchAppControl', id }); setTimeout(ok, 0); }
-    }
+    },
+    ...(sources ? {
+      systeminfo: { getPropertyValue(name, ok, fail) { setTimeout(() => name === 'VIDEOSOURCE' ? ok(JSON.parse(JSON.stringify(window.__tv.sources))) : fail({ name: 'NotSupportedError' }), 0); } },
+      tvwindow: { setSource(source, ok, fail, type) { window.__tv.calls.push({ method: 'setSource', source, type }); setTimeout(ok, 0); } }
+    } : {})
   };
 }
 async function page(options = {}) {
@@ -182,7 +186,7 @@ async function page(options = {}) {
   await current.route('https://image.tmdb.org/**', route => route.fulfill({ status: 200, headers: { 'Content-Type': 'image/svg+xml', 'Access-Control-Allow-Origin': '*' }, body: art('Poster', 200, 300) }));
   // Registered last, so it is matched first.
   await current.route('https://image.tmdb.org/t/p/w1280/**', route => route.fulfill({ status: 200, headers: { 'Content-Type': 'image/jpeg', 'Access-Control-Allow-Origin': '*' }, body: readFileSync(root + 'app/assets/wallpapers/amber.jpg') }));
-  await current.addInitScript(installHarness, { paired: !!options.paired, cacheHome: options.cacheHome || null, staleMs: options.staleMs || 0, look: options.look || null, featureMs: options.featureMs || 0 });
+  await current.addInitScript(installHarness, { paired: !!options.paired, cacheHome: options.cacheHome || null, staleMs: options.staleMs || 0, look: options.look || null, featureMs: options.featureMs || 0, catalog: options.catalog || null, sources: options.sources || null, dock: options.dock || null });
   await current.goto(preview.baseURL + '/home/');
   await current.waitForFunction(() => window.ShoreQA && ShoreQA.ready && ShoreQA.ready());
   if (options.paired && options.waitRows !== false) await current.waitForFunction(() => ShoreQA.state().media.rows.length > 0 && !ShoreQA.state().media.loading);
@@ -637,6 +641,77 @@ async function main() {
       check('an unpaired TV uses Dock', (await state()).media.layout === 'dock' && await current.locator('#watch').evaluate(el => getComputedStyle(el).display) === 'none');
       await scene('appearance');
       check('Layout offers Watch', (await current.evaluate(() => ShoreQA.actions())).length > 0);
+    });
+
+    await run('Watch dock: installed apps and HDMI inputs', async () => {
+      // The apps and inputs of the owner's Frame, as its app list and source list report them.
+      const TV_APPS = [['org.tizen.netflix-app', 'Netflix'], ['9Ur5IzDKqV.TizenYouTube', 'YouTube'], ['org.tizen.primevideo', 'Prime Video'], ['MCmYXNxgcu.DisneyPlus', 'Disney+'],
+        ['LBUAQX1exg.Hulu', 'Hulu'], ['com.samsung.tv.aria-video', 'Apple TV'], ['gzcc4LRFBF.Peacock', 'Peacock TV'], ['PvWgqxV3Xa.YouTubeTV', 'YouTube TV'], ['vYmY3ACVaa.emby', 'Emby'],
+        ['3KA0pm7a7V.TubiTV', 'Tubi - Free Movies & TV'], ['XtU8fQk2gN.ESPN', 'ESPN'], ['rJeHak5zRg.Spotify', 'Spotify - Music and Podcasts']].map(([id, name]) => ({ id, name, show: true, iconPath: '' }));
+      const SOURCES = { connected: [{ type: 'HDMI', number: 1, editName: 'Xbox' }], disconnected: [{ type: 'HDMI', number: 2, editName: 'HDMI2' }, { type: 'TV', number: 0 }, { type: 'HDMI', number: 3 }] };
+      api = freshApi(); await page({ paired: true, look: 'watch', catalog: TV_APPS, sources: SOURCES });
+      await until(() => document.querySelectorAll('#wDock .wapp.is-input').length === 3 && ShoreQA.state().home.length === 9);
+      const s = await state();
+      check('inherited defaults that aren’t installed give way to the TV’s own services', s.home.join() === 'netflix,youtube,primevideo,disneyplus,LBUAQX1exg.Hulu,appletv,gzcc4LRFBF.Peacock,PvWgqxV3Xa.YouTubeTV,vYmY3ACVaa.emby', s.home);
+      check('the change is saved', (await current.evaluate(() => JSON.parse(localStorage.getItem('cleanframe.home.v1')).dock)).join() === s.home.join());
+      const names = await current.locator('#wDock .wapp').evaluateAll(els => els.map(e => e.getAttribute('aria-label')));
+      check('HDMI inputs follow the apps, named as the TV names them', names.slice(9).join() === 'Xbox,HDMI 2, no signal,HDMI 3, no signal', names);
+      check('the tuner isn’t listed as an input', !names.some(n => /^TV/.test(n)));
+      const dock = await current.locator('#wDock').evaluate(e => { const r = e.getBoundingClientRect(); return { l: r.left, r: r.right }; });
+      check('twelve tiles still fit on screen', dock.l >= 0 && dock.r <= 1920, dock);
+      for (let i = 0; i < 10 && (await where()).zone !== 'wapps'; i++) await nav('down');
+      check('Down reaches the dock', (await where()).zone === 'wapps', await where());
+      for (let i = 0; i < 9; i++) await nav('right');
+      check('the first input follows the last app', (await where()).focusAction === 'home.input.1', await where());
+      await current.waitForTimeout(400); await shot('watch-inputs');
+      await nav('ok');
+      await until(() => window.__tv.calls.some(c => c.id === 'org.tizen.tv-viewer'));
+      const calls = await current.evaluate(() => window.__tv.calls);
+      const set = calls.find(c => c.method === 'setSource');
+      check('OK switches the main picture to that input, then opens the TV viewer', set && set.source.number === 1 && set.source.editName === 'Xbox' && set.type === 'MAIN' && calls.indexOf(set) < calls.findIndex(c => c.id === 'org.tizen.tv-viewer'), calls);
+      await current.close(); current = null;
+
+      // Named devices get their own icons; inputs can be taken off Home and put back.
+      const DEVICES = { connected: [{ type: 'HDMI', number: 1, editName: 'Nintendo Switch' }, { type: 'HDMI', number: 3, editName: 'Q-Series Soundbar' }], disconnected: [{ type: 'HDMI', number: 2, editName: 'HDMI2' }] };
+      api = freshApi(); await page({ paired: true, look: 'watch', catalog: TV_APPS, sources: DEVICES });
+      await until(() => document.querySelectorAll('#wDock .wapp.is-input').length === 3 && ShoreQA.state().home.length === 9);
+      const icons = await current.locator('#wDock .wapp.is-input .wapp-input svg').evaluateAll(els => els.map(e => e.innerHTML.length));
+      const kinds = await current.evaluate(() => [...document.querySelectorAll('#wDock .wapp.is-input')].map(e => e.querySelector('svg').innerHTML.includes('rect') ? 'soundbar' : e.querySelector('svg').innerHTML.includes('circle') ? 'gamepad' : 'hdmi'));
+      check('Switch gets a controller, the soundbar a soundbar, a plain input the HDMI plug', kinds.join() === 'gamepad,hdmi,soundbar', { kinds, icons });
+      const colour = await current.evaluate(() => ['emby', 'youtube', 'primevideo'].map(id => { const m = document.querySelector('#wDock .mark[data-mark="' + id + '"]'); return m && !!m.querySelector('img') && !m.querySelector('.mk'); }));
+      check('Emby, YouTube and Prime Video show their marks in colour', colour.every(Boolean), colour);
+      const tinted = await current.evaluate(() => !!document.querySelector('#wDock .mark[data-mark="netflix"] .mk'));
+      check('other marks stay tinted to the theme', tinted);
+      await scene('settings');
+      check('Settings offers Inputs on Home with a count', (await current.locator('[data-action="settings.group.inputs"]').textContent()).includes('3 of 3'));
+      const sbox = await current.locator('.settings-group').evaluateAll(els => els.map(e => e.getBoundingClientRect().bottom));
+      const shint = await current.locator('.settings-overview-hint').evaluate(e => e.getBoundingClientRect().top);
+      check('eight groups still fit above the hint', Math.max(...sbox) < shint, { sbox, shint });
+      await act('settings.group.inputs');
+      check('Inputs on Home opens', (await state()).view === 'inputs');
+      await reach('list.input.2.toggle');
+      await until(() => JSON.parse(localStorage.getItem('cleanframe.home.v1')).hiddenInputs.join() === '2');
+      check('the hidden input is saved', true);
+      check('the line now offers Add to Home', (await current.locator('[data-action="list.input.2.toggle"]').textContent()).includes('Add to Home'));
+      await shot('inputs-on-home');
+      await nav('back'); await nav('back');
+      await until(() => document.querySelectorAll('#wDock .wapp.is-input').length === 2);
+      const left = await current.locator('#wDock .wapp.is-input').evaluateAll(els => els.map(e => e.getAttribute('aria-label')));
+      check('the dock leaves it out', !left.some(n => /^HDMI 2/.test(n)), left);
+      await current.reload(); await until(() => ShoreQA.ready() && document.querySelectorAll('#wDock .wapp.is-input').length === 2);
+      check('it stays hidden after a restart', true);
+      await scene('settings'); await act('settings.group.inputs'); await reach('list.input.2.toggle');
+      await until(() => JSON.parse(localStorage.getItem('cleanframe.home.v1')).hiddenInputs.length === 0);
+      check('Add to Home puts it back', true);
+      await current.close(); current = null;
+
+      api = freshApi(); await page({ paired: true, look: 'watch', catalog: TV_APPS, sources: { connected: [], disconnected: [] }, dock: ['espn', 'stremio', 'netflix'] });
+      await until(() => ShoreQA.state().catalog.loaded);
+      await current.waitForTimeout(200);
+      check('a Home the owner arranged keeps its order and drops only what isn’t installed', (await state()).home.join() === 'netflix', (await state()).home);
+      check('no inputs, no input tiles', await current.locator('#wDock .wapp.is-input').count() === 0);
+      await scene('settings');
+      check('no inputs, no Inputs on Home setting', await current.locator('[data-action="settings.group.inputs"]').count() === 0);
     });
 
     await run('Watch layout follows Background', async () => {

@@ -24,6 +24,10 @@
     { id: 'sbs', name: 'SBS On Demand', mark: true, appId: 'OyE7OuxlUi.SBSOnDemand' },
     { id: 'applemusic', name: 'Apple Music', mark: true, appId: 'org.tizen.apple.apple-music' }
   ];
+  /* Brand marks for apps outside the primary set, matched by app ID in device.js. */
+  var EXTRA_MARKS = ['hbomax', 'spotify', 'tubi', 'emby'];
+  /* Marks drawn in their own brand colours, shown as images rather than tinted masks. */
+  var COLOR_MARKS = ['emby', 'youtube', 'primevideo'];
   var PRIMARY = PRIMARY_APPS.map(function (a) { return a.id; }), APPS = PRIMARY_APPS.slice(), ALPHA = [];
   var WALLS = window.CleanFrameWallpapers || [{ id: 'misty', name: 'Misty coast', tone: 'light', ut: { tr: 'mist', br: 'mist' }, frostVeil: .20 }];
   var ADAPTIVE_INK = window.CleanFrameAdaptiveInk || {};
@@ -67,6 +71,9 @@
     down: '<path d="m5 8.5 7 7 7-7"/>',
     updown: '<path d="m7.5 9.5 4.5-4.5 4.5 4.5M7.5 14.5l4.5 4.5 4.5-4.5"/>',
     tv: '<rect x="3" y="4.5" width="18" height="12" rx="2"/><path d="M8.5 20h7"/>',
+    hdmi: '<path d="M3.5 8.5h17v4.2l-2.6 3.3H6.1l-2.6-3.3Z"/><path d="M7.5 11.6h9"/>',
+    soundbar: '<rect x="2" y="9" width="20" height="6.5" rx="2.2"/><circle cx="6.5" cy="12.25" r="1.4"/><circle cx="17.5" cy="12.25" r="1.4"/><path d="M10.5 12.25h3"/>',
+    gamepad: '<path d="M7.2 8h9.6a4 4 0 0 1 3.9 3.2l.8 4.1a2.4 2.4 0 0 1-4.1 2.1L15.6 16H8.4l-1.8 1.4a2.4 2.4 0 0 1-4.1-2.1l.8-4.1A4 4 0 0 1 7.2 8Z"/><path d="M7.5 11v3M6 12.5h3"/><circle cx="15.5" cy="11.6" r=".6"/><circle cx="17.3" cy="13.4" r=".6"/>',
     warn: '<path d="M12 4 2.8 19.5h18.4Z"/><path d="M12 10v4.5M12 17.3v.1"/>'
   };
 
@@ -85,6 +92,7 @@
   /* Lobby: Emby and Seerr rows from the paired server. Absent until the owner pairs this TV,
      so an unpaired Home is unchanged. */
   var Media = window.LobbyMedia;
+  var INPUTS = [];
   var W = { i: 0, timer: 0, src: null, back: 0, pre: null, preImg: null, band: 0, side: 0 };
   var M = { cfg: null, data: null, rows: [], loading: false, error: null, at: 0, request: 0, unauthorized: false,
     featured: [], cols: {}, row: 0, settings: null, settingsLoading: false, settingsError: null, saving: null, note: null, timer: 0 };
@@ -213,10 +221,10 @@
     } else st = 'width:' + w + 'px;height:' + h + 'px;left:0;top:0;object-fit:contain';
     probeMark(id);
     return '<span class="mark' + (markProbes[id] === 'bad' ? ' is-bad' : '') + '" data-mark="' + id + '" style="width:' + w + 'px;height:' + h + 'px">'
-      + (maskSupport ? '<span class="mk" style="' + st + ';-webkit-mask-image:url(' + ICONS + id + '.svg);mask-image:url(' + ICONS + id + '.svg)"></span>' : '<img alt="" src="' + ICONS + id + '.svg" style="' + st + '">') + '</span>';
+      + (maskSupport && COLOR_MARKS.indexOf(id) < 0 ? '<span class="mk" style="' + st + ';-webkit-mask-image:url(' + ICONS + id + '.svg);mask-image:url(' + ICONS + id + '.svg)"></span>' : '<img alt="" src="' + ICONS + id + '.svg" style="' + st + '">') + '</span>';
   }
   function appMark(a, w, h, size) {
-    if (a.mark && (maskSupport || S.c.bg !== 'light')) return markHtml(a.brand || a.id, w, h, size);
+    if (a.mark && (maskSupport || S.c.bg !== 'light' || COLOR_MARKS.indexOf(a.brand || a.id) >= 0)) return markHtml(a.brand || a.id, w, h, size);
     var words = a.name.split(/\s+/), letters = words[0].charAt(0) + (words.length > 1 ? words[1].charAt(0) : '');
     return '<span class="mark monogram' + (a.icon ? ' native-icon' : '') + '" style="width:' + w + 'px;height:' + h + 'px;font-size:' + Math.round(size * .65) + 'px"><span>' + esc(letters.toUpperCase()) + '</span>'
       + (a.icon ? '<img alt="" data-native-icon="true" src="' + esc(a.icon) + '">' : '') + '</span>';
@@ -411,7 +419,7 @@
     var legacyList = s.theme === 'list', h = [], recent = [], records = Array.isArray(s.appRecords) ? s.appRecords : [];
     records.slice(0, 256).forEach(function (a) {
       if (!a || !safeId(a.id) || !safeId(a.appId) || typeof a.name !== 'string' || !a.name.trim() || app(a.id)) return;
-      APPS.push({ id: a.id, appId: a.appId, name: a.name.slice(0, 160), brand: ['hbomax', 'spotify', 'tubi'].indexOf(a.brand) >= 0 ? a.brand : '', mark: ['hbomax', 'spotify', 'tubi'].indexOf(a.brand) >= 0, icon: safeIcon(a.icon) });
+      APPS.push({ id: a.id, appId: a.appId, name: a.name.slice(0, 160), brand: EXTRA_MARKS.indexOf(a.brand) >= 0 ? a.brand : '', mark: EXTRA_MARKS.indexOf(a.brand) >= 0, icon: safeIcon(a.icon) });
     });
     (Array.isArray(s.home) ? s.home : Array.isArray(s.dock) ? s.dock : []).forEach(function (id) {
       if (!safeId(id) || h.indexOf(id) >= 0 || h.length >= CAP) return;
@@ -426,7 +434,8 @@
       focus: pick(modern.focus, LOOK_VALUES.focus, legacyList ? 'type' : 'glass'), material: pick(modern.material, LOOK_VALUES.material, 'soft'),
       font: pick(modern.font, LOOK_VALUES.font, 'manrope'), wall: wall(modern.wall || s.wallpaper) ? modern.wall || s.wallpaper : WALLS[0].id,
       home: h, recent: recent, lastApp: h.indexOf(s.lastApp) >= 0 ? s.lastApp : h[0],
-      mode: pick(s.mode, MODES.map(function (m) { return m.id; }), 'fixed')
+      mode: pick(s.mode, MODES.map(function (m) { return m.id; }), 'fixed'),
+      hiddenInputs: (Array.isArray(s.hiddenInputs) ? s.hiddenInputs : []).filter(function (n, i, all) { return typeof n === 'number' && n >= 1 && n <= 9 && all.indexOf(n) === i; })
     };
   }
   function serialise(c) {
@@ -451,7 +460,7 @@
   }
   function clearSession() { S.undo = []; S.removedAt = {}; S.note = null; S.err = null; }
   function begin() { S.note = null; }
-  function next(home, recent) { var c = lookOf(S.c); c.home = home; c.recent = recent; c.lastApp = S.c.lastApp; c.mode = S.c.mode; return c; }
+  function next(home, recent) { var c = lookOf(S.c); c.home = home; c.recent = recent; c.lastApp = S.c.lastApp; c.mode = S.c.mode; c.hiddenInputs = (S.c.hiddenInputs || []).slice(); return c; }
   function snap() { return { home: S.c.home.slice(), recent: S.c.recent.slice() }; }
   function pushRecent(list, id) { return [id].concat(without(list, id)).slice(0, 5); }
   function write(c, label) {
@@ -543,6 +552,27 @@
     S.press = id; S.lastLaunch = a.name;
     perform(a.name, function (done) { FrameDevice.launchApp(a.appId, done); });
   }
+  /* On the TV, Home keeps only installed apps. A Home still on the inherited defaults is refilled from the
+     installed services below, in this order; one the owner arranged keeps its order. */
+  var HOME_PICKS = [{ id: 'netflix' }, { id: 'youtube' }, { id: 'primevideo' }, { id: 'disneyplus' }, { name: /^hulu$/i },
+    { id: 'appletv' }, { name: /^peacock/i }, { name: /^youtube tv$/i }, { name: /^(?:max|hbo max)$/i }, { name: /^paramount/i }, { name: /^emby$/i }, { name: /^plex$/i }];
+  function syncHome() {
+    var home = S.c.home, kept, want = [], c;
+    if (!ALPHA.length) return;
+    kept = home.filter(function (id) { return ALPHA.indexOf(id) >= 0; });
+    if (kept.length === home.length) return;
+    if (same(home, PRIMARY)) {
+      HOME_PICKS.forEach(function (p) {
+        var id = p.id ? (ALPHA.indexOf(p.id) >= 0 ? p.id : null) : ALPHA.filter(function (x) { return p.name.test(app(x).name); })[0];
+        if (id && want.indexOf(id) < 0 && want.length < CAP) want.push(id);
+      });
+    }
+    if (!want.length) want = kept;
+    if (!want.length) return;
+    c = next(want, S.c.recent.filter(function (id) { return ALPHA.indexOf(id) >= 0 && want.indexOf(id) < 0; }));
+    c.lastApp = want.indexOf(S.c.lastApp) >= 0 ? S.c.lastApp : want[0];
+    if (write(c, 'Apps on Home')) { setSel(want.indexOf(S.sel) >= 0 ? S.sel : want[0]); log('Home matched to installed apps'); }
+  }
   function refreshCatalog() {
     var request, oldFocus;
     if (catalog.loading) return;
@@ -565,6 +595,7 @@
       });
       ALPHA.sort(function (a, b) { return app(a).name.toLowerCase().localeCompare(app(b).name.toLowerCase()); });
       catalog.loaded = true; catalog.error = null; catalog.revision++;
+      syncHome();
       if (top().id === 'apps' && oldFocus && ALPHA.indexOf(oldFocus) >= 0) top().f.i = ALPHA.indexOf(oldFocus);
       norm(); render();
     });
@@ -975,9 +1006,10 @@
       { id: 'layout', label: 'Layout', value: VALUE_NAMES[S.c.layout] },
       { id: 'typography', label: 'Typography', value: FONTS[S.c.font].name },
       { id: 'focus', label: 'Focus', value: VALUE_NAMES[S.c.focus] + (materialApplies() ? ', ' + VALUE_NAMES[S.c.material] : '') },
-      { id: 'editor', label: 'Apps on Home', value: n + (n === 1 ? ' app' : ' apps') },
+      { id: 'editor', label: 'Apps on Home', value: n + (n === 1 ? ' app' : ' apps') }].concat(INPUTS.length ? [
+      { id: 'inputs', label: 'Inputs on Home', value: shownInputs().length + ' of ' + INPUTS.length }] : []).concat([
       { id: 'media', label: 'Emby & Seerr', value: !M.cfg ? 'Not connected' : M.unauthorized ? 'Not paired. Connect again' : M.cfg.tvName || Media.host(M.cfg.url) },
-      { id: 'samsung', label: 'Samsung', value: 'Home and TV settings' }];
+      { id: 'samsung', label: 'Samsung', value: 'Home and TV settings' }]);
   }
   function settingsIds() { return settingsRows().map(function (r) { return r.id; }); }
   V.settings = {
@@ -995,6 +1027,7 @@
   };
   function settingsOk(id) {
     if (id === 'editor') openEditor('settings');
+    else if (id === 'inputs') openInputs();
     else if (id === 'media') { if (!M.cfg || M.unauthorized) openConnect(); else openMediaSettings(); }
     else openAppearance(id);
   }
@@ -1368,7 +1401,29 @@
     });
     return lines;
   }
-  function listLines(t) { return t.id === 'teams' ? teamLines(t) : mediaSettingsLines(); }
+  function listLines(t) { return t.id === 'teams' ? teamLines(t) : t.id === 'inputs' ? inputLines() : mediaSettingsLines(); }
+  /* Inputs on Home: each HDMI input the TV reports can be shown in the Watch dock or left out. */
+  function inputLines() {
+    var shown = shownInputs().length, lines = [{ key: 'done', label: INPUTS.length ? shown + ' of ' + INPUTS.length + ' inputs on Home' : 'No HDMI inputs found',
+      desc: INPUTS.length ? 'Inputs follow your apps in the dock along the bottom of Home.' : 'This TV didn’t report any HDMI inputs.', parts: [{ id: 'done', label: 'Done' }] }];
+    INPUTS.forEach(function (inp) {
+      var on = (S.c.hiddenInputs || []).indexOf(inp.number) < 0;
+      lines.push({ key: 'input.' + inp.number, input: inp.number, label: inputName(inp),
+        desc: (inp.name ? 'HDMI ' + inp.number + ' · ' : '') + (inp.connected ? 'Connected' : 'Nothing connected'),
+        parts: [{ id: 'toggle', label: on ? 'On Home' : 'Add to Home', applied: on }] });
+    });
+    return lines;
+  }
+  function openInputs() { M.note = null; push({ id: 'inputs', top: 0, f: { i: 0, p: 0 } }); refreshInputs(); }
+  function inputsOk(t, line, part) {
+    var hidden, c;
+    if (part.id === 'done') { pop(); return; }
+    if (!line.input) return;
+    hidden = (S.c.hiddenInputs || []).slice();
+    if (hidden.indexOf(line.input) >= 0) hidden = without(hidden, line.input); else hidden.push(line.input);
+    c = next(S.c.home.slice(), S.c.recent.slice()); c.hiddenInputs = hidden;
+    write(c, (hidden.indexOf(line.input) >= 0 ? 'Remove ' : 'Add ') + 'HDMI ' + line.input);
+  }
   function focusLines(lines) { return lines.filter(function (l) { return !l.head; }); }
   function enabledPart(line, p, step) {
     var i = clamp(p, 0, line.parts.length - 1);
@@ -1474,7 +1529,7 @@
         while (line.parts[p] && line.parts[p].disabled) p += k === 'left' ? -1 : 1;
         if (line.parts[p]) t.f.p = p;
       }
-      else if (k === 'ok' && line.parts[t.f.p]) { if (t.id === 'teams') teamsOk(t, line, line.parts[t.f.p]); else mediaSetOk(t, line, line.parts[t.f.p]); }
+      else if (k === 'ok' && line.parts[t.f.p]) { if (t.id === 'teams') teamsOk(t, line, line.parts[t.f.p]); else if (t.id === 'inputs') inputsOk(t, line, line.parts[t.f.p]); else mediaSetOk(t, line, line.parts[t.f.p]); }
     },
     point: function (t, z, i) {
       if (z !== 'part') return;
@@ -1483,6 +1538,7 @@
   };
   V.mediaset = LIST_VIEW;
   V.teams = LIST_VIEW;
+  V.inputs = LIST_VIEW;
 
   /* ---------- Dispatch ---------- */
   function norm() { var t = top(), v = V[t.id]; if (v.norm) v.norm(t); }
@@ -1830,7 +1886,37 @@
   function greeting() { var h = new Date().getHours(); return h < 5 ? 'Good evening' : h < 12 ? 'Good morning' : h < 18 ? 'Good afternoon' : 'Good evening'; }
   function wDateText() { var d = new Date(); return DAYS[d.getDay()] + ', ' + MONTHS[d.getMonth()] + ' ' + d.getDate(); }
   function wTop(f) { if (M.featured.length) f.zone = 'whero'; else if (wBands().length) wEnterBand(f, wBands(), 0, 0); else wRail(f); }
-  function wDock(f) { if (S.c.home.length) { f.zone = 'wapps'; f.a = clamp(f.a || 0, 0, S.c.home.length - 1); } }
+  function wDock(f) { var n = dockItems().length; if (n) { f.zone = 'wapps'; f.a = clamp(f.a || 0, 0, n - 1); } }
+  /* The Watch dock: Home apps, then the TV's HDMI inputs. */
+  function dockItems() {
+    return S.c.home.map(function (id) { return { kind: 'app', id: id }; }).concat(shownInputs().map(function (inp) { return { kind: 'input', id: 'hdmi' + inp.number, input: inp }; }));
+  }
+  function shownInputs() { return INPUTS.filter(function (inp) { return (S.c.hiddenInputs || []).indexOf(inp.number) < 0; }); }
+  /* Known devices get their own icon, matched by the name the TV gives the input. */
+  function inputIcon(inp) {
+    var n = inp.name || '';
+    if (/sound ?bar|q-?series|\bhw-?q|\bq\d{3,4}\b|samsung audio|\baudio\b|\barc\b/i.test(n)) return 'soundbar';
+    if (/switch|nintendo|xbox|playstation|\bps[345]\b|console|steam ?deck|game/i.test(n)) return 'gamepad';
+    return 'hdmi';
+  }
+  function inputName(inp) { return inp.name || 'HDMI ' + inp.number; }
+  function refreshInputs() {
+    FrameDevice.inputs(function (err, list) {
+      var next = err || !Array.isArray(list) ? [] : list.slice(0, 6);
+      if (JSON.stringify(next) === JSON.stringify(INPUTS)) return;
+      INPUTS = next; norm(); render();
+    });
+  }
+  function openInput(inp) {
+    if (busy) return;
+    S.press = null;
+    perform(inputName(inp), function (done) { FrameDevice.input(inp.number, done); });
+  }
+  function dockOk(item) {
+    if (!item) return;
+    if (item.kind === 'input') openInput(item.input);
+    else { setSel(item.id); launch(item.id); }
+  }
   function wRail(f) { f.zone = 'wrail'; f.u = clamp(S.lastUtil, 0, W_RAIL.length - 1); }
   function wEnterBand(f, bands, b, s) {
     f.b = b; f.zone = 'wband'; f.s = clamp(s || 0, 0, bands[b].rows.length - 1);
@@ -1843,7 +1929,7 @@
       if (!bands.length) { wTop(f); if (f.zone === 'wband') wDock(f); }
       else { f.b = clamp(f.b || 0, 0, bands.length - 1); f.s = clamp(f.s || 0, 0, bands[f.b].rows.length - 1); }
     }
-    if (f.zone === 'wapps') { if (S.c.home.length) f.a = clamp(f.a || 0, 0, S.c.home.length - 1); else wTop(f); }
+    if (f.zone === 'wapps') { if (dockItems().length) f.a = clamp(f.a || 0, 0, dockItems().length - 1); else wTop(f); }
     if (f.zone === 'wrail') f.u = clamp(f.u || 0, 0, W_RAIL.length - 1);
     W.i = clamp(W.i, 0, Math.max(0, M.featured.length - 1));
   }
@@ -1869,11 +1955,11 @@
     }
     if (f.zone === 'wapps') {
       if (k === 'left') { if (f.a > 0) f.a--; else wRail(f); }
-      else if (k === 'right' && f.a < S.c.home.length - 1) f.a++;
+      else if (k === 'right' && f.a < dockItems().length - 1) f.a++;
       // Up returns to the band last used, or the top when there are no rows.
       else if (k === 'up') { if (bands.length) wEnterBand(f, bands, clamp(W.band, 0, bands.length - 1), W.side); else if (M.featured.length) f.zone = 'whero'; else wRail(f); }
       else if (k === 'back') wTop(f);
-      else if (k === 'ok') { setSel(S.c.home[f.a]); launch(S.c.home[f.a]); }
+      else if (k === 'ok') dockOk(dockItems()[f.a]);
       return;
     }
     band = bands[f.b]; row = band.rows[f.s]; c = mediaCol(row);
@@ -1988,21 +2074,27 @@
   }
   /* The Home apps, always at the bottom: a smaller version of the Dock that follows App display. */
   function renderWatchDock(zone) {
-    var n = S.c.home.length, size = WG.app, f = top().f, width = n * size.pitch - (size.pitch - size.w) + 24;
+    var items = dockItems(), n = items.length, f = top().f, inner = WG.width - 24;
+    // Tiles narrow when apps and inputs together would overflow the screen.
+    var pitch = Math.min(WG.app.pitch, Math.floor((inner + 8) / Math.max(1, n))), w = pitch - 8, width = n * pitch - 8 + 24;
     wDockEl.className = 'w-dock a-' + S.c.apps + (n ? ' is-on' : '') + (zone === 'wapps' ? ' is-active' : '');
     wDockEl.style.width = width + 'px'; wDockEl.style.left = Math.round((1920 - width) / 2) + 'px';
-    keyed(wDockEl, S.c.home.map(function (id, i) { return { key: id, id: id, i: i }; }), function (tile, te) {
-      var a = app(te.id), name = a ? a.name : te.id;
-      setContent(tile, te.id + '|' + S.c.apps + '|' + S.c.bg, function () {
-        return (S.c.apps !== 'text' && a ? '<span class="wapp-mark">' + appMark(a, 112, S.c.apps === 'icons' ? 56 : 44, S.c.apps === 'icons' ? 52 : 40) + '</span>' : '')
+    keyed(wDockEl, items.map(function (item, i) { return { key: item.kind + ':' + item.id, item: item, i: i }; }), function (tile, te) {
+      var item = te.item, a = item.kind === 'app' ? app(item.id) : null, name = a ? a.name : item.kind === 'input' ? inputName(item.input) : item.id, markW = Math.min(112, w - 16);
+      setContent(tile, item.kind + '|' + item.id + '|' + name + '|' + (item.input ? inputIcon(item.input) : '') + '|' + S.c.apps + '|' + S.c.bg + '|' + markW, function () {
+        // Inputs always carry their name: their icons are all alike.
+        if (item.kind === 'input') return '<span class="wapp-mark wapp-input">' + icon(inputIcon(item.input)) + '</span><span class="wapp-name">' + esc(name) + '</span>';
+        return (S.c.apps !== 'text' && a ? '<span class="wapp-mark">' + appMark(a, markW, S.c.apps === 'icons' ? 56 : 44, S.c.apps === 'icons' ? 52 : 40) + '</span>' : '')
           + (S.c.apps !== 'icons' ? '<span class="wapp-name">' + esc(name) + '</span>' : '');
       });
-      tile.className = 'wapp' + (zone === 'wapps' && te.i === f.a ? ' is-focus' : '');
-      tile.style.transform = 'translate3d(' + (12 + te.i * size.pitch) + 'px,0,0)';
-      tile.setAttribute('role', 'button'); tile.setAttribute('aria-label', name);
-      attrs(tile, 'wapp', te.i, 'home.app.' + te.id);
+      tile.className = 'wapp' + (item.kind === 'input' ? ' is-input' + (item.input.connected ? '' : ' is-off') : '') + (zone === 'wapps' && te.i === f.a ? ' is-focus' : '');
+      tile.style.width = w + 'px';
+      tile.style.transform = 'translate3d(' + (12 + te.i * pitch) + 'px,0,0)';
+      tile.setAttribute('role', 'button'); tile.setAttribute('aria-label', item.kind === 'input' && !item.input.connected ? name + ', no signal' : name);
+      attrs(tile, 'wapp', te.i, item.kind === 'input' ? 'home.input.' + item.input.number : 'home.app.' + item.id);
     });
   }
+
   function renderWatch(t) {
     var live = t.id === 'home', f = t.f, zone = live ? f.zone : '', bands = wBands(), ys = [], y = 0, shift = 0, fb = -1, row, focusItem = null, it;
     bands.forEach(function (band) { ys.push(y); y += band.h; });
@@ -2410,7 +2502,8 @@
       return '<h2 class="s-title">Connect to Emby</h2><p class="s-sub" data-slot="sub" aria-live="polite"></p><div class="cn-body" data-slot="body"></div><div class="msg-acts cn-acts" data-slot="acts"></div>';
     },
     mediaset: listFrame,
-    teams: listFrame
+    teams: listFrame,
+    inputs: listFrame
   };
   function hours(min) { return min >= 60 ? Math.floor(min / 60) + 'h' + (min % 60 ? ' ' + min % 60 + 'm' : '') : min + 'm'; }
   /* While details load their space is kept, so the buttons below don't move when they arrive. */
@@ -2454,8 +2547,8 @@
   }
   function fillList(t, el) {
     var all = listLines(t), lines = focusLines(all), focus = lines[t.f.i], y = 0, fy = 0, entries = [], more = false;
-    setHTML(el.title, t.id === 'teams' ? 'Your teams' : 'Emby &amp; Seerr');
-    setHTML(el.sub, esc(M.saving ? 'Saving ' + M.saving.toLowerCase() + '…' : M.note || (t.id === 'teams' ? 'Follow teams to see their games in Your Teams on Home.' : 'These settings belong to this TV. Your Emby server keeps them.')));
+    setHTML(el.title, t.id === 'teams' ? 'Your teams' : t.id === 'inputs' ? 'Inputs on Home' : 'Emby &amp; Seerr');
+    setHTML(el.sub, esc(M.saving ? 'Saving ' + M.saving.toLowerCase() + '…' : M.note || (t.id === 'teams' ? 'Follow teams to see their games in Your Teams on Home.' : t.id === 'inputs' ? 'Choose which HDMI inputs appear on Home.' : 'These settings belong to this TV. Your Emby server keeps them.')));
     all.forEach(function (line) {
       entries.push({ key: line.head ? 'head.' + line.head + '.' + y : line.key, line: line, y: y });
       if (line === focus) fy = y;
@@ -2570,8 +2663,9 @@
       el.otherAfter.className = 'row-cue editor-after' + (afterRows ? ' is-on' : '');
     },
     settings: function (t, el) {
-      var html = '';
-      settingsRows().forEach(function (r) {
+      var html = '', rows = settingsRows();
+      el.list.className = 'settings-overview' + (rows.length > 7 ? ' is-compact' : '');
+      rows.forEach(function (r) {
         html += '<button type="button" tabindex="-1" class="settings-group' + (r.id === t.f.id ? ' is-focus' : '') + '" data-z="row" data-i="0" data-id="' + r.id + '" data-action="settings.' + (r.id === 'editor' ? 'editor' : 'group.' + r.id) + '"><span class="settings-group-copy"><span class="settings-group-name">' + esc(r.label) + '</span><span class="settings-group-value">' + esc(r.value) + '</span></span>' + icon('right') + '</button>';
       });
       setHTML(el.list, html);
@@ -2624,7 +2718,8 @@
       setHTML(el.acts, t.step === 'address' ? '' : actButtons(connectActions(t), t.f.b));
     },
     mediaset: fillList,
-    teams: fillList
+    teams: fillList,
+    inputs: fillList
   };
 
   /* ---------- Atomic appearance bundles ---------- */
@@ -2872,6 +2967,7 @@
     else {
       release();
       refreshMedia(false);
+      refreshInputs();
       if (S.c.bg === 'photo' && !S.pending && !S.previewBundle && (!committedBundle || S.bundleKey !== bundleKey(S.c))) setLook({}, { transient: true, startup: true });
       after(); updateClock(); focusStage();
     }
@@ -2918,6 +3014,8 @@
   initialise();
   M.cfg = Media.config();
   if (M.cfg) { setHome(Media.cachedHome()); refreshMedia(true); }
+  refreshInputs();
+  if (!catalog.loaded) refreshCatalog();
   setLook({}, { transient: true, startup: true });
   norm(); render(); fit(); focusStage(); updateClock(); syncRotation();
 })();
